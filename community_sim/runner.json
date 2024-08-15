@@ -1,0 +1,18 @@
+{
+    "broker": true,
+    "federates": [
+      {
+        "directory": ".",
+        "exec": "python alfalfaFederate.py",
+        "host": "localhost",
+        "name": "alfalfaFederate"
+      },
+      {
+        "directory": ".",
+        "exec": "python DSSfederate.py",
+        "host": "localhost",
+        "name": "DSSfederate"
+      }
+    ],
+    "name": "leadvilleTest"
+  }

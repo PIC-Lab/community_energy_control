@@ -1,0 +1,6 @@
+New LineGeometry.Geometry_1 Nconds=3 Nphases=2 Units=m Cond=1 Wire=OH_TPLX_4 X=0.0 H=4.864 Normamps=145.0 Cond=2 Wire=OH_TPLX_4 X=0.0304 H=4.864 Normamps=145.0 Cond=3 Wire=OH_TPLX_4 X=0.0 H=4.5592 Normamps=145.0 Reduce=y
+
+New LineGeometry.Geometry_2 Nconds=2 Nphases=1 Units=m Cond=1 Wire=OH_ACSR_336kcmil X=0.0 H=10.0 Normamps=520.0 Cond=2 Wire=OH_ACSR_336kcmil X=0.0 H=9.6952 Normamps=520.0 Reduce=y
+
+New LineGeometry.Geometry_3 Nconds=4 Nphases=3 Units=m Cond=1 Wire=OH_ACSR_336kcmil X=0.0 H=10.0 Normamps=520.0 Cond=2 Wire=OH_ACSR_336kcmil X=0.304 H=10.0 Normamps=520.0 Cond=3 Wire=OH_ACSR_336kcmil X=0.608 H=10.0 Normamps=520.0 Cond=4 Wire=OH_ACSR_336kcmil X=0.0 H=9.6952 Normamps=520.0 Reduce=y
+

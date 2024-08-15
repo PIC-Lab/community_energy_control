@@ -1,0 +1,22 @@
+{
+    "coreType": "zmq",
+    "loglevel": "data",
+    "name": "DSSfederate",
+    "terminate_on_error": true,
+    "publications": [
+      {
+        "global": true,
+        "key": "bus_voltages",
+        "required": true,
+        "type": "String"
+      }
+    ],
+    "subscriptions": [
+      {
+        "global": true,
+        "key": "load_powers",
+        "required": true,
+        "type": "String"
+      }
+    ]
+  }
