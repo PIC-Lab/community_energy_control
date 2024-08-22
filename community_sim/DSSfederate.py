@@ -6,9 +6,10 @@ import json
 import logging
 from opendss_wrapper import OpenDSS
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.DEBUG)
+from eventParser import ParseControlEvent
+
+with open('simParams.json') as fp:
+    simParams = json.load(fp)
 
 # Folder and File locations
 MainDir = os.path.abspath(os.path.dirname(__file__))
@@ -22,9 +23,14 @@ main_results_file = os.path.join(ResultsDir, 'main_results.csv')
 voltage_file = os.path.join(ResultsDir, 'voltage_results.csv')
 elements_file = os.path.join(ResultsDir, 'element_results.csv')
 load_powers_results_file = os.path.join(ResultsDir, 'load_powers_results.csv')
+battery_results_file = os.path.join(ResultsDir, 'battery_results.csv')
 
+# ----- HELICS federate setup -----
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.DEBUG)
 
-""" Register federate from json """
+# Register federate from json
 fed = h.helicsCreateCombinationFederateFromConfig(
     os.path.join(os.path.dirname(__file__), "DSSfederate.json")
 )
@@ -40,21 +46,24 @@ logger.debug(f"\tNumber of publications: {pub_count}")
 # publications, and subscriptions.
 subid = {}
 for i in range(0, sub_count):
-    subid[i] = h.helicsFederateGetInputByIndex(fed, i)
-    sub_name = h.helicsInputGetName(subid[i])
+    ipt = h.helicsFederateGetInputByIndex(fed, i)
+    sub_name = h.helicsInputGetName(ipt)
+    subid[sub_name] = i
     logger.debug(f"\tRegistered subscription---> {sub_name}")
 
 pubid = {}
 for i in range(0, pub_count):
-    pubid[i] = h.helicsFederateGetPublicationByIndex(fed, i)
-    pub_name = h.helicsPublicationGetName(pubid[i])
+    pub = h.helicsFederateGetPublicationByIndex(fed, i)
+    pub_name = h.helicsPublicationGetName(pub)
+    pubid[pub_name] = i
     logger.debug(f"\tRegistered publication---> {pub_name}")
 
-""" Create DSS Network """
+# ----- Create DSS Network -----
 MasterFile = os.path.join(ModelDir, 'Master.dss')
-start_time = dt.datetime(2023, 7, 1)
-stepsize = dt.timedelta(minutes=1)
-duration = dt.timedelta(days=1)
+start_time = dt.datetime.strptime(simParams['start'], "%m/%d/%y")
+stepsize = pd.Timedelta(simParams['step'])
+duration = pd.Timedelta(simParams['duration'])
+end_time = start_time + duration
 dss = OpenDSS([MasterFile], stepsize, start_time)
 
 # Run additional OpenDSS commands
@@ -64,13 +73,17 @@ dss.run_command('set controlmode=time')
 df = dss.get_all_elements('Load')
 df.to_csv(load_info_file)
 
-""" Execute Federate, set up and start co-simulation """
-h.helicsFederateEnterExecutingMode(fed)
+# ----- Primary co-simulation loop -----
+# Define lists for data collection
 main_results = []
 voltage_results = []
 element_results = []
 load_powers_results = []
-times = pd.date_range(start_time, freq=stepsize, end=start_time + duration)
+battery_results = []
+
+# Execute federate and start co-sim
+h.helicsFederateEnterExecutingMode(fed)
+times = pd.date_range(start_time, freq=stepsize, end=end_time)
 for step, current_time in enumerate(times):
 
     # Update time in co-simulation
@@ -79,51 +92,59 @@ for step, current_time in enumerate(times):
     h.helicsFederateRequestTime(fed, present_step)
 
     # get signals from other federate
-    isupdated = h.helicsInputIsUpdated(subid[0])
+    logger.debug(f"Current time: {current_time}, step: {step}")
+    isupdated = h.helicsInputIsUpdated(subid['load_powers'])
     if isupdated == 1:
-        load_powers = h.helicsInputGetString(subid[0])
+        load_powers = h.helicsInputGetString(subid['load_powers'])
         load_powers = json.loads(load_powers)
+        logger.debug("Recieved updated value for load_powers")
     else:
         load_powers = {}
 
-    logger.debug(f"Current time: {current_time}, step: {step}. Received value: load_powers = {load_powers}")
+    isupdated = h.helicsInputIsUpdated(subid['control_events'])
+    if isupdated == 1:
+        control_events = h.helicsInputGetString(subid['control_events'])
+        control_events = json.loads(control_events)
+        logger.debug("Recieved updated value for control_events")
+    else:
+        control_events = {}
+
+    batteryControl = ParseControlEvent(control_events)
 
     # load
-    for load_name, set_point in load_powers.items():
-        dss.set_power(load_name, element='Load', p=set_point)
+    for loadName, set_point in load_powers.items():
+        dss.set_power(loadName, element='Load', p=set_point)
+
+    # Battery control
+    for batteryName, state in batteryControl:
+        dss.set_property(batteryName, 'state', state, element='Storage')
 
     # solve OpenDSS network model
     dss.run_dss()
 
-    # Publish voltage results
-    h.helicsPublicationPublishString(pubid[0], json.dumps(dss.get_all_bus_voltages(average=True)))
+    # Publish battery results
+    battery_data = dss.get_all_elements('Storage')
+    h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(battery_data['%stored'].to_dict()))
       
-    """ Get outputs for the feeder, all voltages, and individual element voltage and power """
+    # Get outputs for the feeder, all voltages, and individual element voltage and power
     main_results.append(dss.get_circuit_info())
 
     voltage_results.append(dss.get_all_bus_voltages(average=True))
 
-    # element_results.append({
-    #     'Load Power (kW)': dss.get_power('S22', element='Load', total=True)[0],
-    #     'Load Power (kW)': dss.get_power('S27', element='Load', total=True)[0],
-    #     'Load Power (kW)': dss.get_power('S35', element='Load', total=True)[0],
-    #     'Load Voltage (p.u.)': dss.get_voltage('S22', element='Load', average=True),
-    #     'Load Voltage (p.u.)': dss.get_voltage('S27', element='Load', average=True),
-    #     'Load Voltage (p.u.)': dss.get_voltage('S35', element='Load', average=True)
-    # })
+    battery_results.append(battery_data['%stored'].to_dict())
     
     # Get load data
     load_powers_data = {}
-    for load_name in load_powers:
-        load_powers_data.update({load_name: dss.get_power(load_name, element='Load', total=True)[0]})    
+    for loadName in load_powers:
+        load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})    
     load_powers_results.append(load_powers_data)
     
 
-""" Save results files """
+# Save results files
 pd.DataFrame(main_results).to_csv(main_results_file)
 pd.DataFrame(voltage_results).to_csv(voltage_file)
-# pd.DataFrame(element_results).to_csv(elements_file)
 pd.DataFrame(load_powers_results).to_csv(load_powers_results_file)
+pd.DataFrame(battery_results).to_csv(battery_results_file)
 
 # finalize and close the federate
 h.helicsFederateDestroy(fed)

@@ -1,0 +1,28 @@
+{
+    "coreType": "zmq",
+    "loglevel": "data",
+    "name": "controlFederate",
+    "terminate_on_error": true,
+    "publications": [
+      {
+        "global": true,
+        "key": "control_events",
+        "required": true,
+        "type": "String"
+      }
+    ],
+    "subscriptions": [
+      {
+        "global": true,
+        "key": "battery_soc",
+        "required": true,
+        "type": "String"
+      },
+      {
+        "global": true,
+        "key": "load_powers",
+        "required": true,
+        "type": "String"
+      }
+    ]
+  }

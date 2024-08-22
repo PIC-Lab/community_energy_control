@@ -1,52 +1,52 @@
-New Loadshape.feature_1 npts= 8759 interval=1.0 mult = (file=../profiles/load_1_pu.csv)
+New Loadshape.feature_1 npts= 8759 interval=1.0 mult = (file=./profiles/load_1_pu.csv)
 
-New Loadshape.feature_2 npts= 8759 interval=1.0 mult = (file=../profiles/load_2_pu.csv)
+New Loadshape.feature_2 npts= 8759 interval=1.0 mult = (file=./profiles/load_2_pu.csv)
 
-New Loadshape.feature_5 npts= 8759 interval=1.0 mult = (file=../profiles/load_5_pu.csv)
+New Loadshape.feature_5 npts= 8759 interval=1.0 mult = (file=./profiles/load_5_pu.csv)
 
-New Loadshape.feature_6 npts= 8759 interval=1.0 mult = (file=../profiles/load_6_pu.csv)
+New Loadshape.feature_6 npts= 8759 interval=1.0 mult = (file=./profiles/load_6_pu.csv)
 
-New Loadshape.feature_7 npts= 8759 interval=1.0 mult = (file=../profiles/load_7_pu.csv)
+New Loadshape.feature_7 npts= 8759 interval=1.0 mult = (file=./profiles/load_7_pu.csv)
 
-New Loadshape.feature_8 npts= 8759 interval=1.0 mult = (file=../profiles/load_8_pu.csv)
+New Loadshape.feature_8 npts= 8759 interval=1.0 mult = (file=./profiles/load_8_pu.csv)
 
-New Loadshape.feature_9 npts= 8759 interval=1.0 mult = (file=../profiles/load_9_pu.csv)
+New Loadshape.feature_9 npts= 8759 interval=1.0 mult = (file=./profiles/load_9_pu.csv)
 
-New Loadshape.feature_10 npts= 8759 interval=1.0 mult = (file=../profiles/load_10_pu.csv)
+New Loadshape.feature_10 npts= 8759 interval=1.0 mult = (file=./profiles/load_10_pu.csv)
 
-New Loadshape.feature_11 npts= 8759 interval=1.0 mult = (file=../profiles/load_11_pu.csv)
+New Loadshape.feature_11 npts= 8759 interval=1.0 mult = (file=./profiles/load_11_pu.csv)
 
-New Loadshape.feature_12 npts= 8759 interval=1.0 mult = (file=../profiles/load_12_pu.csv)
+New Loadshape.feature_12 npts= 8759 interval=1.0 mult = (file=./profiles/load_12_pu.csv)
 
-New Loadshape.feature_13 npts= 8759 interval=1.0 mult = (file=../profiles/load_13_pu.csv)
+New Loadshape.feature_13 npts= 8759 interval=1.0 mult = (file=./profiles/load_13_pu.csv)
 
-New Loadshape.feature_14 npts= 8759 interval=1.0 mult = (file=../profiles/load_14_pu.csv)
+New Loadshape.feature_14 npts= 8759 interval=1.0 mult = (file=./profiles/load_14_pu.csv)
 
-New Loadshape.feature_15 npts= 8759 interval=1.0 mult = (file=../profiles/load_15_pu.csv)
+New Loadshape.feature_15 npts= 8759 interval=1.0 mult = (file=./profiles/load_15_pu.csv)
 
-New Loadshape.feature_16 npts= 8759 interval=1.0 mult = (file=../profiles/load_16_pu.csv)
+New Loadshape.feature_16 npts= 8759 interval=1.0 mult = (file=./profiles/load_16_pu.csv)
 
-New Loadshape.feature_17 npts= 8759 interval=1.0 mult = (file=../profiles/load_17_pu.csv)
+New Loadshape.feature_17 npts= 8759 interval=1.0 mult = (file=./profiles/load_17_pu.csv)
 
-New Loadshape.feature_18 npts= 8759 interval=1.0 mult = (file=../profiles/load_18_pu.csv)
+New Loadshape.feature_18 npts= 8759 interval=1.0 mult = (file=./profiles/load_18_pu.csv)
 
-New Loadshape.feature_19 npts= 8759 interval=1.0 mult = (file=../profiles/load_19_pu.csv)
+New Loadshape.feature_19 npts= 8759 interval=1.0 mult = (file=./profiles/load_19_pu.csv)
 
-New Loadshape.feature_20 npts= 8759 interval=1.0 mult = (file=../profiles/load_20_pu.csv)
+New Loadshape.feature_20 npts= 8759 interval=1.0 mult = (file=./profiles/load_20_pu.csv)
 
-New Loadshape.feature_21 npts= 8759 interval=1.0 mult = (file=../profiles/load_21_pu.csv)
+New Loadshape.feature_21 npts= 8759 interval=1.0 mult = (file=./profiles/load_21_pu.csv)
 
-New Loadshape.feature_22 npts= 8759 interval=1.0 mult = (file=../profiles/load_22_pu.csv)
+New Loadshape.feature_22 npts= 8759 interval=1.0 mult = (file=./profiles/load_22_pu.csv)
 
-New Loadshape.feature_23 npts= 8759 interval=1.0 mult = (file=../profiles/load_23_pu.csv)
+New Loadshape.feature_23 npts= 8759 interval=1.0 mult = (file=./profiles/load_23_pu.csv)
 
-New Loadshape.feature_24 npts= 8759 interval=1.0 mult = (file=../profiles/load_24_pu.csv)
+New Loadshape.feature_24 npts= 8759 interval=1.0 mult = (file=./profiles/load_24_pu.csv)
 
-New Loadshape.feature_25 npts= 8759 interval=1.0 mult = (file=../profiles/load_25_pu.csv)
+New Loadshape.feature_25 npts= 8759 interval=1.0 mult = (file=./profiles/load_25_pu.csv)
 
-New Loadshape.feature_26 npts= 8759 interval=1.0 mult = (file=../profiles/load_26_pu.csv)
+New Loadshape.feature_26 npts= 8759 interval=1.0 mult = (file=./profiles/load_26_pu.csv)
 
-New Loadshape.feature_27 npts= 8759 interval=1.0 mult = (file=../profiles/load_27_pu.csv)
+New Loadshape.feature_27 npts= 8759 interval=1.0 mult = (file=./profiles/load_27_pu.csv)
 
-New Loadshape.feature_28 npts= 8759 interval=1.0 mult = (file=../profiles/load_28_pu.csv)
+New Loadshape.feature_28 npts= 8759 interval=1.0 mult = (file=./profiles/load_28_pu.csv)
 

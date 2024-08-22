@@ -12,6 +12,12 @@
         "exec": "python DSSfederate.py",
         "host": "localhost",
         "name": "DSSfederate"
+      },
+      {
+        "directory": ".",
+        "exec": "python controlFederate.py",
+        "host": "localhost",
+        "name": "controlFederate"
       }
     ],
     "name": "leadvilleTest"

@@ -1,22 +1,28 @@
 {
-    "coreType": "zmq",
-    "loglevel": "data",
-    "name": "DSSfederate",
-    "terminate_on_error": true,
-    "publications": [
-      {
-        "global": true,
-        "key": "bus_voltages",
-        "required": true,
-        "type": "String"
-      }
-    ],
-    "subscriptions": [
-      {
-        "global": true,
-        "key": "load_powers",
-        "required": true,
-        "type": "String"
-      }
-    ]
-  }
+  "coreType": "zmq",
+  "loglevel": "data",
+  "name": "DSSfederate",
+  "terminate_on_error": true,
+  "publications": [
+    {
+      "global": true,
+      "key": "battery_soc",
+      "required": false,
+      "type": "String"
+    }
+  ],
+  "subscriptions": [
+    {
+      "global": true,
+      "key": "load_powers",
+      "required": true,
+      "type": "String"
+    },
+    {
+      "global": true,
+      "key": "control_events",
+      "required": true,
+      "type": "String"
+    }
+  ]
+}

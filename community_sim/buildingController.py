@@ -18,7 +18,7 @@ class BuildingController:
         pv: (ndarray[float]) predicted PV generation
         dist: (ndarray[float]) predicted disturbances (outdoor temperature)
     """
-    def __init__(self, id, testCase='MPC'):
+    def __init__(self, id, devices, mode, testCase='MPC'):
         """
         Constructor
         Parameters:
