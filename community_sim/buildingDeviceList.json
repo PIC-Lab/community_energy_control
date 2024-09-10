@@ -1,0 +1,1730 @@
+[
+  {
+    "house_id": "1",
+    "address": "14A Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "lights receptacles",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "dryer",
+        "device_type": "vue2channels",
+        "channel": 12
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "lights receptacles",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "bathroom and gfi",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "dishawasher",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "furnace",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "bathroom and rec",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "dryer",
+        "device_type": "vue2channels",
+        "channel": 13
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "kitchen dining 2",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "kitchen dining",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EE87B4",
+        "device_name": "lights receptacles",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "B2245B0204483fda2a2c2d",
+        "device_name": "chest freezer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a2487",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbc2ca8",
+        "device_name": "dryer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbbac62",
+        "device_name": "washer ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a28d7",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbae5b7",
+        "device_name": "tv bedroom",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a21d3",
+        "device_name": "router",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbca154",
+        "device_name": "tv and cable box living room",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "A2306A05B50C8B95EE87B4",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "2930139879",
+        "device_name": "R1",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030550",
+        "device_name": "PM1",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "2",
+    "address": "10A Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "SXA2306A05B50C8B95EFE320",
+        "device_name": "bedroom",
+        "device_type": "vue2channels",
+        "channel": 13
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EFE320",
+        "device_name": "furnace",
+        "device_type": "vue2channels",
+        "channel": 15
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EFE320",
+        "device_name": "dish washer",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EFE320",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 14
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EFE320",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EFE320",
+        "device_name": "washing machien",
+        "device_type": "vue2channels",
+        "channel": 12
+      },
+      {
+        "device_id": "SXA2306A05B50C8B95EFE320",
+        "device_name": "bedroom",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb018a",
+        "device_name": "TV",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbafa93",
+        "device_name": "TURNS ON/OFF MOMENTARILY",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb01b4",
+        "device_name": "xbox",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac34502d",
+        "device_name": "washer ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbae0f5",
+        "device_name": "dryer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac34446c",
+        "device_name": "TURNS ON/OFF MOMENTARILY ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbc2077",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3cdae",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "A2306A05B50C8B95EFE320",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "2969030157",
+        "device_name": "PM2",
+        "device_type": "pm",
+        "channel": null
+      },
+      {
+        "device_id": "2930138535",
+        "device_name": "R2",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "183561",
+        "device_name": "Sloan_flex-f877",
+        "device_type": "PA-II-FLEX",
+        "channel": null
+      },
+      {
+        "device_id": "194439",
+        "device_name": "Sloan_zen-1",
+        "device_type": "PA-II-FLEX",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "3",
+    "address": "8A Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2307A05B50C8B95F0CE68",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac342bc2",
+        "device_name": "tv bedroom",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac33c6d0",
+        "device_name": "tv living room",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac346580",
+        "device_name": "washer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B02043083988fe4af",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020430839891207a",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "lights",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "bed 2-3 living",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "kitchen appliances 2",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "swamp cooler ",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "kitchen appliances",
+        "device_type": "vue2channels",
+        "channel": 1
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "dryer",
+        "device_type": "vue2channels",
+        "channel": 15
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "dishwasher",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "garbage disposal ",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "furnace",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "GFI",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "master bed",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0CE68",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "2969030560",
+        "device_name": "PM3",
+        "device_type": "pm",
+        "channel": null
+      },
+      {
+        "device_id": "2930139929",
+        "device_name": "R3",
+        "device_type": "radon",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "4",
+    "address": "6A Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2305A05B5EC6260C86180",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a28e0",
+        "device_name": "TV",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3b8f4",
+        "device_name": "refrigerator ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda29c4e9",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C86180",
+        "device_name": "Circuit 4",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C86180",
+        "device_name": "Circuit 2",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C86180",
+        "device_name": "Furnace",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C86180",
+        "device_name": "Circuit 6",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C86180",
+        "device_name": "Dryer",
+        "device_type": "vue2channels",
+        "channel": 1
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C86180",
+        "device_name": "Circuit 8",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "2930140034",
+        "device_name": "R4",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030221",
+        "device_name": "PM4",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "5",
+    "address": "2A Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "B2245B0204483fda2a251e",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f46d16",
+        "device_name": "kitchen small appliances",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f4754b",
+        "device_name": "router/modem",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "2930141325",
+        "device_name": "R5",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030544",
+        "device_name": "PM5",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "6",
+    "address": "1A Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2306A05B5EC6260C92F6C",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb9031",
+        "device_name": "computer ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbc2754",
+        "device_name": "lamp",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb4ad4",
+        "device_name": "tv bedroom",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbaf113",
+        "device_name": "xbox",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbbffc3",
+        "device_name": "router",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbae087",
+        "device_name": "tv",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "hall and tv",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "heater furnace",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "bath bedrooms",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "dryer",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "furnace",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C92F6C",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "2930139936",
+        "device_name": "R6",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030494",
+        "device_name": "PM6",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "7",
+    "address": "2 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2307A05B5B8D61A2D3914",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f49b7a",
+        "device_name": "router",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f46158",
+        "device_name": "wahser",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B02043083988ff16f",
+        "device_name": "tv",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a253a",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f475ae",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204a4e57cbb14e5",
+        "device_name": "cricut/computer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B5B8D61A2D3914",
+        "device_name": "furnace",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2307A05B5B8D61A2D3914",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2307A05B5B8D61A2D3914",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2307A05B5B8D61A2D3914",
+        "device_name": "attic fan",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2307A05B5B8D61A2D3914",
+        "device_name": "diner",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "SXA2307A05B5B8D61A2D3914",
+        "device_name": "master bed bath",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2307A05B5B8D61A2D3914",
+        "device_name": "living room bed",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "2930139887",
+        "device_name": "R7",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969029869",
+        "device_name": "PM7",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "8",
+    "address": "7 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2307A05B50C8B95F0E4D8",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbaf0c9",
+        "device_name": "washer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbae390",
+        "device_name": "table",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb5eee",
+        "device_name": "sowing machine 2 (white)",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb0427",
+        "device_name": "sewing machine 1 (grey)",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb3af0",
+        "device_name": "kitchen accessories",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbba839",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a2eea",
+        "device_name": "tv",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb5e59",
+        "device_name": "coffee maker",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0E4D8",
+        "device_name": "Dryer",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95F0E4D8",
+        "device_name": "Range",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "2930139889",
+        "device_name": "R8",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030539",
+        "device_name": "PM8",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "9",
+    "address": "10 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2307A05B50C8B95EF9420",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f4982d",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a29e8",
+        "device_name": "master bedroom tv",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda29beed",
+        "device_name": "bedroom tv and playstation",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f44419",
+        "device_name": "washer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb3101",
+        "device_name": "air fryer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda29b7d8",
+        "device_name": "Internet box",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f49920",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204c45bbee8a8ba",
+        "device_name": "tv",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "bedroom",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "dryer",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "water heater ",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "bedroom",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "dishwasher",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "bathroom ",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 1
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "bedroom",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "furnace",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF9420",
+        "device_name": "range",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "2930139461",
+        "device_name": "R9",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030577",
+        "device_name": "PM9",
+        "device_type": "pm",
+        "channel": null
+      },
+      {
+        "device_id": "183825",
+        "device_name": "Sloan_flex-d54e",
+        "device_type": "PA-II-FLEX",
+        "channel": null
+      },
+      {
+        "device_id": "194415",
+        "device_name": "Sloan_zen-2",
+        "device_type": "PA-II-FLEX",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "10",
+    "address": "17 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2307A05B50C8B95EF402C",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac3434ed",
+        "device_name": "tv bedroom",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f461f3",
+        "device_name": "xbox",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3ce7f",
+        "device_name": "tv bedroom",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020430839891af38",
+        "device_name": "general kitchen plug",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF402C",
+        "device_name": "gfis b half",
+        "device_type": "vue2channels",
+        "channel": 1
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF402C",
+        "device_name": "furnace ventair",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF402C",
+        "device_name": "dishwasher",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF402C",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF402C",
+        "device_name": "rlts a half",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF402C",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2307A05B50C8B95EF402C",
+        "device_name": "receptacle b half",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "B2245B0204483fda29c5c6",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb86fe",
+        "device_name": "washer ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbbd55d",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbc1d0f",
+        "device_name": "speaker system, fireplace, ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "2930140083",
+        "device_name": "R10",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030517",
+        "device_name": "PM10",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "11",
+    "address": "18 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2307A05B5EC6260C94ED8",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3cb8b",
+        "device_name": "modem and router",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f42456",
+        "device_name": "washer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3d416",
+        "device_name": "tank pump",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee35ca4",
+        "device_name": "tv, ps4, xbox 360",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cba79e5",
+        "device_name": "blender",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f47a53",
+        "device_name": "refigerator",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda29bf44",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "general purpose",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "unknown (double tied)",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "5-way",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "dishwasher",
+        "device_type": "vue2channels",
+        "channel": 1
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "furnace",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "kitchen",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "general purpose",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "general purpose",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "dryer",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2307A05B5EC6260C94ED8",
+        "device_name": "washer",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "2930140045",
+        "device_name": "R11",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030543",
+        "device_name": "PM11",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "12",
+    "address": "21 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "B0000B0204a4e57cbb83b2",
+        "device_name": "washer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb5e2b",
+        "device_name": "toaster",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda29bbd4",
+        "device_name": "phones",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f46f9c",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "2930141323",
+        "device_name": "R12",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030213",
+        "device_name": "PM12",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "13",
+    "address": "23 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2307A05B5C4DEE2306EA0",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb4ac1",
+        "device_name": "treadmill",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda29bf88",
+        "device_name": "fridge",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee35e04",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "2930139892",
+        "device_name": "R13",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969029720",
+        "device_name": "PM13",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "14",
+    "address": "26 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2306A05B5EC6260C93D9C",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbafdbf",
+        "device_name": "internet box",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb6c94",
+        "device_name": "microwave ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbc20f8",
+        "device_name": "vero network box",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204a4e57cbb151c",
+        "device_name": "tv",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Furnace",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Circuit 1",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Dishwasher",
+        "device_type": "vue2channels",
+        "channel": 1
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Circuit 6",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Unlisted (Lights)",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Washer",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Dryer 240V",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Circuit 3",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Circuit 2",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Circuit 5",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2306A05B5EC6260C93D9C",
+        "device_name": "Circuit 27",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "2930140060",
+        "device_name": "R14",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969027534",
+        "device_name": "PM14",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "15",
+    "address": "14 Arrow Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2305A05B5EC6260CA716C",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3c8cc",
+        "device_name": "TV",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f45f78",
+        "device_name": "vent hood",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee35ff3",
+        "device_name": "blender",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda2a2e21",
+        "device_name": "refrigerator ",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204e868e7f43c9a",
+        "device_name": "washer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbadd58",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Washer",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Dryer 240V",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Circuit 6",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "dishwasher",
+        "device_type": "vue2channels",
+        "channel": 1
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Circuit 5",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Swamp Cooler",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Blend Air",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Furnace",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Microwave",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Circuit 5",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260CA716C",
+        "device_name": "Circuit 6",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "2930141389",
+        "device_name": "R15",
+        "device_type": "radon",
+        "channel": null
+      },
+      {
+        "device_id": "2969030566",
+        "device_name": "PM15",
+        "device_type": "pm",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "16",
+    "address": "211 E Monroe St #5 Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "A2317A05B50C8B95CADB1C",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3d031",
+        "device_name": "computer laptop",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee3d302",
+        "device_name": "phone cjarger",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee35f36",
+        "device_name": "router",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbaef9d",
+        "device_name": "modem",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbbd1e3",
+        "device_name": "truck oil heater",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbba8c1",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B0000B0204a4e57cbb537f",
+        "device_name": "refrigerator",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204c45bbee35e03",
+        "device_name": "living room envy heater",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B0204483fda29b29f",
+        "device_name": "Unknown Device",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2317A05B50C8B95CADB1C",
+        "device_name": "Dryer",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "SXA2317A05B50C8B95CADB1C",
+        "device_name": "Bathroom Lights",
+        "device_type": "vue2channels",
+        "channel": 9
+      },
+      {
+        "device_id": "SXA2317A05B50C8B95CADB1C",
+        "device_name": "Range",
+        "device_type": "vue2channels",
+        "channel": 13
+      }
+    ]
+  },
+  {
+    "house_id": "17",
+    "address": "211 E Monroe St #9 Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "194427",
+        "device_name": "Sloan_zen-3",
+        "device_type": "PA-II-FLEX",
+        "channel": null
+      }
+    ]
+  },
+  {
+    "house_id": "18",
+    "address": "506 E 9th St Leadville, CO 80461",
+    "devices": [
+      {
+        "device_id": "B2245B0204483fda29c329",
+        "device_name": "router",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac3466b1",
+        "device_name": "washer",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac342f9d",
+        "device_name": "microwave",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "B2245B020498cdac33c00c",
+        "device_name": "toaster/pressure cooker",
+        "device_type": "plugload",
+        "channel": 0
+      },
+      {
+        "device_id": "A2305A05B5EC6260C941A8",
+        "device_name": "mains",
+        "device_type": "vue2",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Outside-Dr",
+        "device_type": "vue2channels",
+        "channel": 5
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Unlabeled",
+        "device_type": "vue2channels",
+        "channel": 3
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "FX",
+        "device_type": "vue2channels",
+        "channel": 0
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Carport",
+        "device_type": "vue2channels",
+        "channel": 6
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Unlabeled",
+        "device_type": "vue2channels",
+        "channel": 2
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Kitchen/Washer",
+        "device_type": "vue2channels",
+        "channel": 10
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Dryer 240V",
+        "device_type": "vue2channels",
+        "channel": 11
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Shed",
+        "device_type": "vue2channels",
+        "channel": 7
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Unlabeled",
+        "device_type": "vue2channels",
+        "channel": 4
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Range 240V",
+        "device_type": "vue2channels",
+        "channel": 8
+      },
+      {
+        "device_id": "SXA2305A05B5EC6260C941A8",
+        "device_name": "Unlabeled",
+        "device_type": "vue2channels",
+        "channel": 1
+      }
+    ]
+  }
+]

@@ -8,15 +8,16 @@ from alfalfa_client.alfalfa_client import AlfalfaClient
 from pathlib import Path
 import numpy as np
 
-from eventParser import ParseControlEvent
+# from eventParser import ParseControlEvent
 
-simParams = json.load('simParams.json')
-
-# ----- HELICS federate setup -----
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
+with open('simParams.json') as fp:
+    simParams = json.load(fp)
+
+# ----- HELICS federate setup -----
 # Register federate from json
 fed = h.helicsCreateCombinationFederateFromConfig(
     os.path.join(os.path.dirname(__file__), "alfalfaFederate.json")
@@ -35,14 +36,15 @@ subid = {}
 for i in range(0, sub_count):
     ipt = h.helicsFederateGetInputByIndex(fed, i)
     sub_name = h.helicsInputGetName(ipt)
-    subid[sub_name] = i
+    sub_name = sub_name[sub_name.find('/')+1:]
+    subid[sub_name] = ipt
     logger.debug(f"\tRegistered subscription---> {sub_name}")
 
 pubid = {}
 for i in range(0, pub_count):
     pub = h.helicsFederateGetPublicationByIndex(fed, i)
     pub_name = h.helicsPublicationGetName(pub)
-    pubid[pub_name] = i
+    pubid[pub_name] = pub
     logger.debug(f"\tRegistered publication---> {pub_name}")
 
 # Define parameters to run simulation
@@ -61,6 +63,7 @@ ac = AlfalfaClient(host='http://localhost')
 
 # Define paths to models to by uploaded
 model_paths = list(Path('./building_models').iterdir())
+model_paths = [Path('./building_models/1')]
 
 # Upload sites to alfalfa
 site_ids = ac.submit(model_paths)
@@ -126,19 +129,15 @@ for step, current_time in enumerate(times):
     logger.debug(f"Current time: {current_time}, step: {step}")
     isupdated = h.helicsInputIsUpdated(subid['control_events'])
     if isupdated == 1:
-        control_events = h.helicsInputGetString(subid[0])
-        control_events = json.loads(control_events)
+        controlEvents = h.helicsInputGetString(subid['control_events'])
+        controlEvents = json.loads(controlEvents)
         logger.debug("Recieved updated value for control_events")
     else:
-        control_events = {}
-
-    # Parse control events
-    for controlSet in control_events:
-        location = controlSet['location']
-    
-
+        controlEvents = {}
+            
     # Get building electricity consumption
-    load_powers = {}
+    loadPowers = {}
+    indoorTemp = {}
     for i,alias in enumerate(aliases):
         site = ac.get_alias(alias)
         alf_outs = ac.get_outputs(site)
@@ -153,9 +152,13 @@ for step, current_time in enumerate(times):
         # elif simParams['testCase'] == 'MPC':
         #     trajectories = controllerList[i].PredictiveControl(step)
 
-        # for key,value in controlOutMap.items():
-        #     input_dicts[alias][value] = controllerList[i].actuatorValues[key]
-        # logger.debug(controllerList[i].actuatorValues)
+        # Parse control events
+        for controlSet in controlEvents:
+            location = controlSet['location']
+            for key, value in controlSet['devices']:
+                if key == 'Battery':
+                    continue
+                input_dicts[alias][value] = controlSet['status']
 
         # Push updates to inputs to alfalfa
         ac.set_inputs(site, input_dicts[alias])
@@ -168,10 +171,12 @@ for step, current_time in enumerate(times):
         alf_outs['Electricity:HVAC'] *= 1e-3 / 60
         outputs[alias].append(alf_outs)
 
-        load_powers[alias] = alf_outs['Whole Building Electricity']
+        loadPowers[alias] = alf_outs['Whole Building Electricity']
+        indoorTemp[alias] = alf_outs['living space Air Temperature']
 
-    # Publish building load 
-    h.helicsPublicationPublishString(pubid['load_powers'], json.dumps(load_powers))
+    # Publish values
+    h.helicsPublicationPublishString(pubid['load_powers'], json.dumps(loadPowers))
+    h.helicsPublicationPublishString(pubid['indoor_temp'], json.dumps(indoorTemp))
 
     # Advance the model
     if step < duration / stepsize:          # Don't advance alfalfa on the last iteration of the loop

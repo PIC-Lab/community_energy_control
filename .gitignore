@@ -172,6 +172,8 @@ thermal_rc_model/Saved Figures/
 community_sim/Saved Figures/
 
 # Saved Models
-**/test*
-thermal_rc_model/savedRuns
+**/savedRuns
+
+# Deploy file
+deploy/
 

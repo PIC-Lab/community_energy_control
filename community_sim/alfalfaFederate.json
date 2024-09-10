@@ -9,12 +9,19 @@
       "key": "load_powers",
       "required": true,
       "type": "String"
-    }
-  ],
-  "subscriptions": [
+    },
     {
       "global": true,
+      "key": "indoor_temp",
+      "required": true,
+      "type": "String"
+    }
+  ],
+  "inputs": [
+    {
+      "global": false,
       "key": "control_events",
+      "target": "control_events",
       "required": true,
       "type": "String"
     }

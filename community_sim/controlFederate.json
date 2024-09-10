@@ -11,16 +11,18 @@
         "type": "String"
       }
     ],
-    "subscriptions": [
+    "inputs": [
       {
-        "global": true,
+        "global": false,
         "key": "battery_soc",
+        "target": "battery_soc",
         "required": true,
         "type": "String"
       },
       {
-        "global": true,
-        "key": "load_powers",
+        "global": false,
+        "key": "indoor_temp",
+        "target": "indoor_temp",
         "required": true,
         "type": "String"
       }

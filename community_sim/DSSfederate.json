@@ -7,20 +7,22 @@
     {
       "global": true,
       "key": "battery_soc",
-      "required": false,
+      "required": true,
       "type": "String"
     }
   ],
-  "subscriptions": [
+  "inputs": [
     {
-      "global": true,
+      "global": false,
       "key": "load_powers",
+      "target": "load_powers",
       "required": true,
       "type": "String"
     },
     {
-      "global": true,
+      "global": false,
       "key": "control_events",
+      "target": "control_events",
       "required": true,
       "type": "String"
     }

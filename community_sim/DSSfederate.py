@@ -6,7 +6,9 @@ import json
 import logging
 from opendss_wrapper import OpenDSS
 
-from eventParser import ParseControlEvent
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.DEBUG)
 
 with open('simParams.json') as fp:
     simParams = json.load(fp)
@@ -26,10 +28,6 @@ load_powers_results_file = os.path.join(ResultsDir, 'load_powers_results.csv')
 battery_results_file = os.path.join(ResultsDir, 'battery_results.csv')
 
 # ----- HELICS federate setup -----
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.DEBUG)
-
 # Register federate from json
 fed = h.helicsCreateCombinationFederateFromConfig(
     os.path.join(os.path.dirname(__file__), "DSSfederate.json")
@@ -48,14 +46,15 @@ subid = {}
 for i in range(0, sub_count):
     ipt = h.helicsFederateGetInputByIndex(fed, i)
     sub_name = h.helicsInputGetName(ipt)
-    subid[sub_name] = i
+    sub_name = sub_name[sub_name.find('/')+1:]
+    subid[sub_name] = ipt
     logger.debug(f"\tRegistered subscription---> {sub_name}")
 
 pubid = {}
 for i in range(0, pub_count):
     pub = h.helicsFederateGetPublicationByIndex(fed, i)
     pub_name = h.helicsPublicationGetName(pub)
-    pubid[pub_name] = i
+    pubid[pub_name] = pub
     logger.debug(f"\tRegistered publication---> {pub_name}")
 
 # ----- Create DSS Network -----
@@ -95,35 +94,40 @@ for step, current_time in enumerate(times):
     logger.debug(f"Current time: {current_time}, step: {step}")
     isupdated = h.helicsInputIsUpdated(subid['load_powers'])
     if isupdated == 1:
-        load_powers = h.helicsInputGetString(subid['load_powers'])
-        load_powers = json.loads(load_powers)
+        loadPowers = h.helicsInputGetString(subid['load_powers'])
+        loadPowers = json.loads(loadPowers)
         logger.debug("Recieved updated value for load_powers")
     else:
-        load_powers = {}
+        loadPowers = {}
 
     isupdated = h.helicsInputIsUpdated(subid['control_events'])
     if isupdated == 1:
-        control_events = h.helicsInputGetString(subid['control_events'])
-        control_events = json.loads(control_events)
+        controlEvents = h.helicsInputGetString(subid['control_events'])
+        controlEvents = json.loads(controlEvents)
         logger.debug("Recieved updated value for control_events")
     else:
-        control_events = {}
-
-    batteryControl = ParseControlEvent(control_events)
+        controlEvents = {}
 
     # load
-    for loadName, set_point in load_powers.items():
+    for loadName, set_point in loadPowers.items():
         dss.set_power(loadName, element='Load', p=set_point)
 
     # Battery control
-    for batteryName, state in batteryControl:
-        dss.set_property(batteryName, 'state', state, element='Storage')
+    for controlSet in controlEvents:
+            location = controlSet['location']
+            for key, value in controlSet['devices']:
+                if key == 'Battery':
+                    # dss.set_property(value['device'], 'state', value['state'], element='Storage')
+                    dss.set_property('Battery1', 'state', 'Charge', element='Storage')
+                else:
+                    continue
 
     # solve OpenDSS network model
     dss.run_dss()
 
     # Publish battery results
     battery_data = dss.get_all_elements('Storage')
+    logger.debug(battery_data["%stored"].to_dict())
     h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(battery_data['%stored'].to_dict()))
       
     # Get outputs for the feeder, all voltages, and individual element voltage and power
@@ -135,7 +139,7 @@ for step, current_time in enumerate(times):
     
     # Get load data
     load_powers_data = {}
-    for loadName in load_powers:
+    for loadName in loadPowers:
         load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})    
     load_powers_results.append(load_powers_data)
     
