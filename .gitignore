@@ -168,8 +168,7 @@ community_sim/34BusSystem/
 community_sim/34BusSystem.zip
 
 # Figure images
-thermal_rc_model/Saved Figures/
-community_sim/Saved Figures/
+**/Saved Figures/
 
 # Saved Models
 **/savedRuns
