@@ -105,7 +105,8 @@ class RunManager():
             else:
                 runJson['name'] = userInput
                 newPath = saveDir+'/'+runJson['name']
-                shutil.rmtree(newPath)
+                if os.path.isdir(newPath):
+                    shutil.rmtree(newPath)
 
         os.rename(oldPath, newPath)
 

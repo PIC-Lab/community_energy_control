@@ -756,7 +756,7 @@ class ControllerSystem():
         Ymin = trajectories['ymin'].detach().cpu().reshape(nsteps_test+1, self.nref)
         Ymax = trajectories['ymax'].detach().cpu().reshape(nsteps_test+1, self.nref)
 
-        numPlots = 3
+        numPlots = 4
         fig, ax = plt.subplots(numPlots, figsize=(20,16))
         ax[0].plot(trajectories['y'].detach().cpu().reshape(nsteps_test+1, self.ny), linewidth=3)
         ax[0].plot(Ymin, '--', linewidth=3, c='k')
@@ -768,6 +768,9 @@ class ControllerSystem():
         ax[1].set(ylim=(-0.1,1.1))
         ax[2].plot(trajectories['d'].detach().cpu().reshape(nsteps_test+1, self.nd), linewidth=3)
         ax[2].set_ylabel('d', fontsize=26)
+        # ax[2].set_xlabel('Time [mins]', fontsize=26)
+        ax[3].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3)
+        ax[2].set_ylabel('dr', fontsize=26)
         ax[2].set_xlabel('Time [mins]', fontsize=26)
         for i in range(numPlots):
             ax[i].grid(True)
