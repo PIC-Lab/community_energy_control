@@ -98,7 +98,7 @@ for step, current_time in enumerate(times):
     sensorValues = {k:{name: v for name, v in zip(sensorNames, batterySOC, indoorTemp)}
                     for k in batterySOC.keys()}
 
-    controlEvents = controller.Step(sensorValues)
+    controlEvents = controller.Step(sensorValues, current_time)
 
     # Map actuator values to control event format
     input_dicts = {}

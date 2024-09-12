@@ -29,6 +29,24 @@ class Coordinator():
         '''
         pass
 
+    def Assess(self):
+        '''
+        Assess phase: Determines if the community can/should adjust planned consumption
+        '''
+        pass
+
+    def Adjust(self):
+        '''
+        Adjust phase: Determine how a desired change in consumption will occur
+        '''
+        pass
+
+    def Dispatch(self):
+        '''
+        Dispatch phase: Format desired consumption changes as control signals to be provided to each house
+        '''
+        pass
+
 class AssessOptimization(ConvexProblem):
     '''
     Optimization problem for the assess phase

@@ -47,7 +47,7 @@ class CommunityController:
         for alias in self.controlAliasList:
             self.flexibilityList.append(FlexibilityMetricPredictor())
 
-    def Step(self, values):
+    def Step(self, values, currentTime):
         '''
         Run every time step
         Returns a list of dicts containing the control events for each house. Matches controls API format except for device IDs
@@ -55,10 +55,7 @@ class CommunityController:
         # Update controllers
         controlEvents = {}
         for i, alias in enumerate(self.controlAliasList):
-            for key, value in values[alias]:
-                self.controllerList.sensorValues[key] = value
-
-            trajectories = self.controllerList[i].PredictiveControl()
+            self.controllerList[i].Step(values, currentTime)
 
             controlEvents[alias] = self.controllerList[i].actuatorValues
         

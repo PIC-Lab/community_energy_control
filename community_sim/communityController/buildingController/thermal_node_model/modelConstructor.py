@@ -530,7 +530,7 @@ class ModeClassifier():
             plt.close(fig)
 
 class ControllerSystem():
-    def __init__(self, nx, nu, nd, nd_obs, ny, y_idx, d_idx, manager, name,
+    def __init__(self, nx, nu, nd, nd_obs, ny, y_idx, d_idx, manager, name, norm,
                  thermalModel, classifier, device, debugLevel, saveDir=None):
         '''
         Constructor function
@@ -560,6 +560,7 @@ class ControllerSystem():
         self.y_idx = y_idx
         self.d_idx = d_idx
 
+        self.norm = norm
         self.manager = manager
 
         self.weights = manager.models[name]['weights']
@@ -596,14 +597,14 @@ class ControllerSystem():
     def CreateModel(self):
         '''Defines control system'''
         net = blocks.MLP_bounds(
-        insize=self.ny + 2*self.nref + self.nd_obs,
+        insize=self.ny + 2*self.nref + self.nd_obs + 1,
         outsize=self.nu,
         hsizes=self.hsizes,
         nonlin=nn.GELU,
         min=0,
         max=1)
 
-        policy = Node(net, ['y', 'ymin', 'ymax', 'd_obs'], ['u'], name='policy')
+        policy = Node(net, ['y', 'ymin', 'ymax', 'd_obs', 'dr'], ['u'], name='policy')
 
         # Freeze thermal model
         for p in self.thermalModel.nodes[0].parameters():
@@ -631,13 +632,13 @@ class ControllerSystem():
         u = variable('u')
         ymin = variable('ymin')
         ymax = variable('ymax')
-        dr = variable('dr')
+        dr = variable('dr')         # Varies between -1 and 1
 
         # objectives
         action_loss = u.minimize(weight=self.weights['action_loss'], name='action_loss')
         # du_loss = self.weights['du_loss'] * (u[:,:-1,:] - u[:,1:,:] == torch.tensor(np.zeros((self.batch_size, self.nsteps-1, self.nu)), device=self.device)) # delta u minimization
         # du_loss.name = 'du_loss'
-        dr_loss = self.weights['dr_loss'] * ((u) * dr)
+        dr_loss = self.weights['dr_loss'] * (((u) * dr) == torch.tensor(np.zeros((self.batch_size, self.nsteps, 1)), device=self.device))
         dr_loss.name = 'dr_loss'
 
         # thermal comfort constraints
@@ -711,10 +712,10 @@ class ControllerSystem():
         # nsteps_test = 60
 
         # generate reference
-        np_refs = (tempMin.cpu() + 4.0) * np.ones(nsteps_test+1)
+        np_refs = (tempMin.cpu() + self.norm.normDelta(4.0, keys=['y'])) * np.ones(nsteps_test+1)
         # np_refs = psl.signals.step(nsteps_test+1, 1, min=tempMin, max=tempMax, randsteps=5, rng=self.rng)
         ymin_val = torch.tensor(np_refs, dtype=torch.float32, device=self.device).reshape(1, nsteps_test+1, 1)
-        ymax_val = ymin_val + 2.0
+        ymax_val = ymin_val + self.norm.normDelta(2.0, keys=['y'])
         # get disturbance signal
         start_idx = self.rng.integers(0, len(dataset['D'])-nsteps_test)
         torch_dist = torch.tensor(self.Get_D(dataset['D'], nsteps_test+1, start_idx),
@@ -722,7 +723,7 @@ class ControllerSystem():
         # initial data for closed loop sim
         x0 = torch.tensor(self.Get_X0(dataset['X']),
                           dtype=torch.float32, device=self.device).reshape(1,1,self.nx)
-        dr = psl.signals.step(nsteps_test+1, 1, min=0, max=1, randsteps=5, rng=self.rng)
+        dr = torch.tensor(psl.signals.step(nsteps_test+1, 1, min=0, max=1, randsteps=5, rng=self.rng), dtype=torch.float32).reshape(1, nsteps_test+1, 1)
         data = {'xn': x0,
                 'y': x0[:,:,self.y_idx],
                 'ymin': ymin_val,
@@ -829,9 +830,10 @@ class ControllerSystem():
         # sampled references for training the policy
         batched_xmin = xmin_range.sample((self.n_samples, 1, self.nref)).repeat(1, self.nsteps+1, 1)
         batched_range = torch.tensor(self.rng.uniform(low=1.0, high = 8.0, size=(self.n_samples, 1, self.nref)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps+1, 1)
+        batched_range = self.norm.normDelta(batched_range, keys=['y'])
         batched_xmax = batched_xmin + batched_range
 
-        batched_dr = torch.tensor(self.rng.randint(low=0, high=2, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps+1, 1)
+        batched_dr = torch.tensor(self.rng.integers(low=0, high=2, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps, 1)
         
         # sampled disturbance trajectories from simulation model
         temp_d = []
@@ -893,41 +895,6 @@ class my_round_func(torch.autograd.function.InplaceFunction):
     def backward(ctx, grad_output):
         grad_input = grad_output.clone()
         return grad_input
-    
-class SSM(nn.Module):
-    def __init__(self, A, B, F, nx, nu, nd, device):
-        super().__init__()
-        self.A = nn.Parameter(A, requires_grad=True)
-        # self.B = nn.Parameter(B, requires_grad=True)
-        self.B = B
-        self.F = nn.Parameter(F, requires_grad=True)
-        # self.A = A
-        # self.B = B
-        # self.F = F
-        self.device = device
-        self.in_features = nx + nu + nd
-        self.out_features = nx
-
-    def forward(self, x, u, d):
-        assert len(x.shape) == 2, x.shape
-        assert len(u.shape) == 2
-        assert len(d.shape) == 2
-
-        x = x @ self.A.T + self.B(u) + d @ self.F.T
-        L, V = torch.linalg.eig(self.A)
-        L = L.imag[np.newaxis, :]
-        # L = L.to(device=self.device)
-
-        return (x, L)
-    
-    # def forward(self, x, u, d):
-    #     assert len(x.shape) == 2, x.shape
-    #     assert len(u.shape) == 2
-    #     assert len(d.shape) == 2
-
-    #     x = x @ self.A.T + u @ self.B.T + d @ self.F.T
-
-    #     return x
     
 class Normalizer():
     '''Class that handles the normalizing and de-normalizing of a variety of data structures'''
@@ -1226,7 +1193,7 @@ class Callback_Controller(Callback):
         ax[1].plot(train_y)
         ax[1].plot(train_ymin, '--', c='k', zorder=-1)
         ax[1].plot(train_ymax, '--', c='k', zorder=-1)
-        ax[1].set(ylim=[10,35], title='y', xlim=[0,2000])
+        ax[1].set(ylim=[0,1.1], title='y', xlim=[0,2000])
         plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
         plt.tight_layout()
         Path(f'{self.savePath}/debug').mkdir(exist_ok=True)

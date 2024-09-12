@@ -84,7 +84,7 @@ def Main():
                 'max_epochs': 1000,
                 'patience': 50,
                 'warmup': 100,
-                'lr': 0.001,
+                'lr': 0.0001,
                 'nsteps': 60,
                 'batch_size': 30
             }
@@ -98,7 +98,7 @@ def Main():
                 'max_epochs': 500,
                 'patience': 50,
                 'warmup': 100,
-                'lr': 0.001,
+                'lr': 0.0001,
                 'nsteps': 30,
                 'batch_size': 10
             }
@@ -107,18 +107,18 @@ def Main():
         # Controller model
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
-            'weights': {'action_loss': 0.01, 'dr_loss': 0.1,
-                        'x_min': 10.0, 'x_max': 10.0},
+            'weights': {'action_loss': 0.0001, 'dr_loss': 0.0001,
+                        'x_min': 1000.0, 'x_max': 1000.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
-            'hsizes': [100,100],
+            'hsizes': [200,200],
             'train_params': {
                 'max_epochs': 200,
                 'patience': 30,
                 'warmup': 50,
                 'lr': 0.01,
-                'nsteps': 30,
-                'batch_size': 50,
+                'nsteps': 60,
+                'batch_size': 100,
                 'n_samples': 1000
             }
         }
@@ -153,7 +153,7 @@ def Main():
                 manager.LoadModel(modelRunName, controllerModelName)
 
         # ----- Set dataset parameters -----
-        manager.dataset['path'] = 'building4_data.csv'
+        manager.dataset['path'] = '../../../results/summer/4_out.csv'
         manager.dataset['sliceBool'] = True
         manager.dataset['slice_idx'] = [0, 57600]
         # ----------------------------------
@@ -170,7 +170,7 @@ def Main():
     #         buildings.append(file.name)
     buildings = ['4']
 
-    # Train classifier
+    # ------------ Train classifier ------------
     tempList = []
     while len(tempList) < manager.dataset['slice_idx'][1]:
         value = np.random.uniform(0, 1)
@@ -196,17 +196,21 @@ def Main():
 
     classifier.TestModel()
 
-    tol = 1e-6
-    iterations = 1
-    i = 0
-    count = 0
-    bestLoss = 1e5
+    manager.models["classifier"]["init_params"] = {'nm': classifier.nm, 'nu': classifier.nu}
+    # ------------------------------------------
+
+    tol = 1e-6              # Tolerance when determining if training loss improved at all
+    bestLoss = 1e5          # Best achieved loss over multiple training attempts
+    maxIterations = 1       # Maximum attempts allowed for finding the best training loss
+
+    count = 0   
     attempts = 0
+    i = 0
     while(i < len(buildings)):
         building = buildings[i]
         print(f"Training models for building {building}, round {count}")
-        alfData = pd.read_csv('../community_sim/results/summer/4_out.csv', usecols=['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature'], nrows=57600)
-        # buildingData = pd.read_csv('building4_data.csv', usecols=['indoor temp', 'outdoor temp'], nrows=57600)
+        # Temporary, fix when training all buildings
+        alfData = pd.read_csv(manager.dataset['path'], usecols=['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature'], nrows=57600)
 
         if manager.dataset['sliceBool']:
             raw_dataset = alfData[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1]].copy()
@@ -215,32 +219,40 @@ def Main():
 
         print(raw_dataset.describe())
 
+        norm = Normalizer()
+        norm.add_data(raw_dataset)
+        norm.add_data(raw_dataset, keys=['y', 'u', 'd'])
+        dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'd'])
+
         dataset = {}
-        dataset['X'] = raw_dataset['living space Air Temperature'].to_numpy()[:, np.newaxis]
-        dataset['U'] = raw_dataset['Electricity:HVAC'].to_numpy()[:, np.newaxis]
-        dataset['D'] = raw_dataset['Site Outdoor Air Temperature'].to_numpy()[:, np.newaxis]
+        dataset['X'] = dataset_norm['living space Air Temperature'].to_numpy()[:, np.newaxis]
+        dataset['U'] = dataset_norm['Electricity:HVAC'].to_numpy()[:, np.newaxis]
+        dataset['D'] = dataset_norm['Site Outdoor Air Temperature'].to_numpy()[:, np.newaxis]
 
         # Bounds on indoor temperature
-        tempMin = torch.tensor(manager.tempBounds[0]).to(device=device)
-        tempMax = torch.tensor(manager.tempBounds[1]).to(device=device)
+        tempMin = torch.tensor(norm.norm(manager.tempBounds[0], keys=['y'])).to(device=device)
+        tempMax = torch.tensor(norm.norm(manager.tempBounds[1], keys=['y'])).to(device=device)
 
+        # ---------- Train thermal model -----------
         if (attempts == 0) and (count == 0):
-            # Building thermal model
             buildingThermal = BuildingNode(nx=dataset['X'].shape[1],
                                     nu=dataset['U'].shape[1],
                                     nd=dataset['D'].shape[1],
                                     manager=manager,
                                     name=thermalModelName,
                                     device=device,
-                                    debugLevel = DebugLevel.NO,
+                                    debugLevel = DebugLevel.EPOCH_LOSS,
                                     saveDir=f"{manager.runPath+thermalModelName}/{building}")
-        buildingThermal.CreateModel()
+            buildingThermal.CreateModel()
 
-        buildingThermal.TrainModel(dataset, loadThermal)
+            buildingThermal.TrainModel(dataset, loadThermal)
 
-        buildingThermal.TestModel()
+            buildingThermal.TestModel()
+            
+            manager.models["buildingThermal"]["init_params"] = {'nx': buildingThermal.nx, 'nu': buildingThermal.nu, 'nd': buildingThermal.nd}
+        # ------------------------------------------
 
-        # Controller
+        # ------------ Train controller ------------
         controlSystem = ControllerSystem(nx=dataset['X'].shape[1],
                                         nu=dataset['U'].shape[1],
                                         nd=dataset['D'].shape[1],
@@ -250,6 +262,7 @@ def Main():
                                         d_idx=[0],
                                         manager=manager,
                                         name=controllerModelName,
+                                        norm=norm,
                                         thermalModel=buildingThermal.model,
                                         classifier=classifier.model,
                                         device=device,
@@ -261,11 +274,17 @@ def Main():
 
         controlSystem.TestModel(dataset, tempMin, tempMax)
 
+        manager.models["controller"]["init_params"] = {'nx': controlSystem.nx, 'nu': controlSystem.nu, 'nd': controlSystem.nd,
+                                                       'nd_obs': controlSystem.nd_obs, 'ny': controlSystem.ny,
+                                                       'y_idx': controlSystem.y_idx, 'd_idx': controlSystem.d_idx}
+        # ------------------------------------------
+
         # Skip repeat training if loading a previously saved run
         if loadRun or (loadThermal and loadClass and loadMPC):
             i += 1
             continue
         # Repeat training if it got stuck somewhere
+        # This section is spaghetti code, make it better at some point
         loss_df = pd.read_csv(controlSystem.saveDir+'/loss.csv')
         temp_df = np.abs(loss_df.iloc[0] - loss_df) < tol
         if temp_df.all(axis=None):
@@ -277,7 +296,7 @@ def Main():
                 nextBuilding = False
                 attempts += 1
         else:
-            if count >= iterations:
+            if count >= maxIterations:
                 nextBuilding = True
             else:
                 count += 1
@@ -295,6 +314,9 @@ def Main():
             count = 0
             bestLoss = 1e5
             attempts = 0
+
+    # Update run json with init params for each block (Used when loading for deployment)
+    manager.WriteRunJson()
 
 if __name__ == '__main__':
     Main()
