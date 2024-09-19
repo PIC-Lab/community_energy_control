@@ -1,16 +1,17 @@
-import helics as h
 import json
 import logging
 import os
 import datetime as dt
 import pandas as pd
-import sys
+import numpy as np
+
+from communityController.communityController import CommunityController
+
+import helics as h          # Importing helics before torch will cause a segfault for some reason
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
-
-from communityController.communityController import CommunityController
 
 with open('simParams.json') as fp:
     simParams = json.load(fp)
@@ -22,7 +23,8 @@ simIdxMapping = {v: k for k, v in sensorIdxMapping.items()}     # Map simulation
 # Controller name maps
 # 'controller name': 'model name'
 controlInMap = {'indoorAirTemp': 'living space Air Temperature'}
-controlOutMap = {'heatingSetpoint': 'heating setpoint', 'coolingSetpoint': 'cooling setpoint'}
+controlOutMap = {'heatingSetpoint': 'heating setpoint', 'coolingSetpoint': 'cooling setpoint',
+                 'battery': 'Battery'}
 sensorNames = ['indoorAirTemp', 'batterySOC']
 
 # ----- HELICS federate setup -----
@@ -68,6 +70,7 @@ controller = CommunityController(aliasesSensorIdx)
 
 # ----- Primary co-simulation loop -----
 # Define lists for data collection
+outputs = {alias: [] for alias in aliasesSensorIdx}
 
 # Execute federate and start co-sim
 h.helicsFederateEnterExecutingMode(fed)
@@ -75,6 +78,7 @@ times = pd.date_range(start_time, freq=stepsize, end=end_time)
 for step, current_time in enumerate(times):
     # Update time in co-simulation
     present_step = (current_time - start_time).total_seconds()
+    present_step += 1
     h.helicsFederateRequestTime(fed, present_step)
 
     # get signals from other federate
@@ -84,6 +88,7 @@ for step, current_time in enumerate(times):
         batterySOC = h.helicsInputGetString(subid['battery_soc'])
         batterySOC = json.loads(batterySOC)
         logger.debug("Recieved updated value for battery_soc")
+        logger.debug(batterySOC)
     else:
         batterySOC = {}
 
@@ -92,18 +97,60 @@ for step, current_time in enumerate(times):
         indoorTemp = h.helicsInputGetString(subid['indoor_temp'])
         indoorTemp = json.loads(indoorTemp)
         logger.debug("Recieved updated value for indoor_temp")
+        logger.debug(indoorTemp)
     else:
         indoorTemp = {}
     
-    sensorValues = {k:{name: v for name, v in zip(sensorNames, batterySOC, indoorTemp)}
-                    for k in batterySOC.keys()}
+    sensorValues = {alias: {} for alias in aliasesSensorIdx}
+    for key, value in batterySOC.items():
+        sensorValues[simIdxMapping[key]]['batterySOC'] = value
+    for key, value in indoorTemp.items():
+        if key in simParams['controlledAliases']:
+            sensorValues[simIdxMapping[key]]['indoorTemp'] = value
+
+    logger.debug(sensorValues)
 
     controlEvents = controller.Step(sensorValues, current_time)
 
     # Map actuator values to control event format
-    input_dicts = {}
-    for key,value in controlOutMap.items():
-        input_dicts[controller.controlAliasList[i]][value] = controller.controllerList[i].actuatorValues[key]
+    input_dicts = []
+    for event in controlEvents:
+        tempDict = {}
+        tempDict['location'] = sensorIdxMapping[event['location']]
+        tempDict['devices'] = {}
+        for key,value in controlOutMap.items():
+            if key == 'batteryState':
+                tempDict['devices'][value+tempDict['location']] = event['devices'][key]
+            else:
+                tempDict['devices'][value] = event['devices'][key]
+        input_dicts.append(tempDict)
+
+    for alias in aliasesSensorIdx:
+        controlTraj = {}
+        controlTraj['Time'] = current_time
+        controlTraj['Control Effort'] = controller.trajectories['u'][0,0,0].detach().item()
+        controlTraj['Predicted Temperature'] = controller.trajectories['y'][0,0,0].detach().item()
+        controlTraj['Ymax'] = controller.trajectories['ymax'][0,0,0].detach().item()
+        controlTraj['Ymin'] = controller.trajectories['ymin'][0,0,0].detach().item()
+        controlTraj['dr'] = controller.trajectories['dr'][0,0,0].detach().item()
+        outputs[alias].append(controlTraj)
+
+    logger.debug("Publishing values to other federates")
+    h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
+    logger.debug(input_dicts)
+
+# Put output lists in dataframes
+outputs_df = []
+for key, building in outputs.items():
+    df = pd.DataFrame(building)
+    col = df.pop('Time')
+    df.insert(0, col.name, col)
+    outputs_df.append(df)
+
+# Save data to csv
+aggregateLoad = np.zeros(len(outputs_df[0]))
+for i, building in enumerate(outputs_df):
+    building.to_csv('results/'+simParams['controlledAliases'][i]+'_control.csv', index=False)
 
 # finalize and close the federate
 h.helicsFederateDestroy(fed)

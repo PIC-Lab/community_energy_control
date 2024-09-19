@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import pandas as pd
 import shutil
-from pathlib import Path
 
 import runManager
 from modelConstructor import *
@@ -107,8 +106,8 @@ def Main():
         # Controller model
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
-            'weights': {'action_loss': 0.0001, 'dr_loss': 0.0001,
-                        'x_min': 1000.0, 'x_max': 1000.0},
+            'weights': {'action_loss': 0.01, 'dr_loss': 4.0,
+                        'x_min': 10.0, 'x_max': 10.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
             'hsizes': [200,200],
@@ -116,7 +115,7 @@ def Main():
                 'max_epochs': 200,
                 'patience': 30,
                 'warmup': 50,
-                'lr': 0.01,
+                'lr': 0.001,
                 'nsteps': 60,
                 'batch_size': 100,
                 'n_samples': 1000
@@ -153,7 +152,7 @@ def Main():
                 manager.LoadModel(modelRunName, controllerModelName)
 
         # ----- Set dataset parameters -----
-        manager.dataset['path'] = '../../../results/summer/4_out.csv'
+        manager.dataset['path'] = '../../../results/summer/'
         manager.dataset['sliceBool'] = True
         manager.dataset['slice_idx'] = [0, 57600]
         # ----------------------------------
@@ -163,12 +162,12 @@ def Main():
         manager.WriteRunJson()
 
     # Get building ids
-    # buildingModels = Path('../community_sim/building_models/')
-    # buildings = []
-    # for file in buildingModels.iterdir():
-    #     if (file / 'workflow.osw').exists():
-    #         buildings.append(file.name)
-    buildings = ['4']
+    buildingModels = Path('../../../building_models/')
+    buildings = []
+    for file in buildingModels.iterdir():
+        if (file / 'workflow.osw').exists():
+            buildings.append(file.name)
+    # buildings = ['4']
 
     # ------------ Train classifier ------------
     tempList = []
@@ -210,18 +209,19 @@ def Main():
         building = buildings[i]
         print(f"Training models for building {building}, round {count}")
         # Temporary, fix when training all buildings
-        alfData = pd.read_csv(manager.dataset['path'], usecols=['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature'], nrows=57600)
+        alfData = pd.read_csv(manager.dataset['path']+f'{building}_out.csv', usecols=['Time', 'living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature'], nrows=57600)
 
         if manager.dataset['sliceBool']:
-            raw_dataset = alfData[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1]].copy()
+            raw_dataset = alfData.loc[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1], ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature']].copy()
         else:
-            raw_dataset = alfData.copy()
+            raw_dataset = alfData.loc[:, ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature']].copy()
 
         print(raw_dataset.describe())
 
         norm = Normalizer()
         norm.add_data(raw_dataset)
         norm.add_data(raw_dataset, keys=['y', 'u', 'd'])
+        norm.save(f"{manager.runPath}norm/{building}/")
         dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'd'])
 
         dataset = {}

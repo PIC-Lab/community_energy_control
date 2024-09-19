@@ -15,7 +15,7 @@ import shutil
 
 import neuromancer.psl as psl
 from neuromancer.system import Node, System
-from neuromancer.modules import blocks, solvers
+from neuromancer.modules import blocks
 from neuromancer.dataset import DictDataset
 from neuromancer.constraint import variable
 from neuromancer.loss import PenaltyLoss
@@ -192,7 +192,7 @@ class BuildingNode():
 
         # If load is true, skip training and just load from state dict file
         if load:
-            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth'))
+            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth', weights_only=True))
             self.problem.eval()
             return
 
@@ -426,7 +426,7 @@ class ModeClassifier():
 
         # If load is true, skip training and just load from state dict file
         if load:
-            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth'))
+            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth', weights_only=True))
             self.problem.eval()
             return
 
@@ -604,7 +604,7 @@ class ControllerSystem():
         min=0,
         max=1)
 
-        policy = Node(net, ['y', 'ymin', 'ymax', 'd_obs', 'dr'], ['u'], name='policy')
+        policy = Node(net, ['y', 'ymin', 'ymax', 'd_obs', 'dr'], ['u_dec'], name='policy')
 
         # Freeze thermal model
         for p in self.thermalModel.nodes[0].parameters():
@@ -619,7 +619,7 @@ class ControllerSystem():
         dist_obs = Node(dist_model, ['d'], ['d_obs'], name='dist_obs')
 
         # closed loop system model
-        self.system = System([dist_obs, policy, self.thermalModel.nodes[0], self.thermalModel.nodes[1]],
+        self.system = System([dist_obs, policy, self.classifier, self.thermalModel.nodes[0], self.thermalModel.nodes[1]],
                         nsteps=self.nsteps,
                         name='cl_system')
         self.system.to(device=self.device)
@@ -640,6 +640,7 @@ class ControllerSystem():
         # du_loss.name = 'du_loss'
         dr_loss = self.weights['dr_loss'] * (((u) * dr) == torch.tensor(np.zeros((self.batch_size, self.nsteps, 1)), device=self.device))
         dr_loss.name = 'dr_loss'
+        fuckme_loss = y.minimize(weight=1)
 
         # thermal comfort constraints
         state_lower_bound_penalty = self.weights['x_min'] * (y > ymin)
@@ -650,7 +651,7 @@ class ControllerSystem():
         state_upper_bound_penalty.name = 'x_max'
 
         # list of constraints and objectives
-        objectives = [action_loss, dr_loss]
+        objectives = [dr_loss]
         constraints = [state_lower_bound_penalty, state_upper_bound_penalty]
 
         # Problem construction
@@ -680,7 +681,7 @@ class ControllerSystem():
                 print(key, value.shape)
 
         if load:
-            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth'))
+            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth', weights_only=True))
             self.problem.eval()
             return
 
@@ -770,8 +771,8 @@ class ControllerSystem():
         ax[2].set_ylabel('d', fontsize=26)
         # ax[2].set_xlabel('Time [mins]', fontsize=26)
         ax[3].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3)
-        ax[2].set_ylabel('dr', fontsize=26)
-        ax[2].set_xlabel('Time [mins]', fontsize=26)
+        ax[3].set_ylabel('dr', fontsize=26)
+        ax[3].set_xlabel('Time [mins]', fontsize=26)
         for i in range(numPlots):
             ax[i].grid(True)
             ax[i].tick_params(axis='x', labelsize=26)

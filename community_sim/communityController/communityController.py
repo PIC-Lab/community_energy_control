@@ -1,6 +1,7 @@
-import sys
 from dotenv import dotenv_values
 import json
+import os
+import numpy as np
 
 from communityController.buildingController.buildingController import BuildingController
 from communityController.coordinator.community_optim import Coordinator
@@ -13,24 +14,35 @@ class CommunityController:
         '''
         '''
         self.controlAliasList = controlAliasList
+        self.nsteps = 60
 
         self.controllerList = []
         self.flexibilityList = []
+        self.trajectoryList = []
+
+        self.predictedLoad = np.zeros((self.nsteps, len(controlAliasList)))
+        self.predictedFlex = np.zeros((self.nsteps, len(controlAliasList)))
+
+        self.dirName = os.path.dirname(__file__)
+
+        self.ControllerInit()
+        self.CoordinatorInit()
+        self.FlexibilityInit()
 
     def CoordinatorInit(self):
         '''
         '''
-        self.coodinator = Coordinator()
+        self.coordinator = Coordinator(len(self.controlAliasList), self.nsteps)
 
     def ControllerInit(self):
         '''
         '''
-        if self.mode == 'deploy':
-            self.config = dotenv_values('../.env')
+        # if self.mode == 'deploy':
+        #     self.config = dotenv_values('../.env')
         
         # Get all devices from a building using API
         # Using json file for now
-        with open('community_sim/buildingDeviceList.json') as fp:
+        with open(os.path.join(self.dirName, '../buildingDeviceList.json')) as fp:
             buildingDevices = json.load(fp)
                 
         # Create controller object
@@ -39,7 +51,7 @@ class CommunityController:
                 if building['house_id'] == alias:
                     devices = building['devices']
                     break
-            self.controllerList.append(BuildingController(alias, devices, self.mode, 'MPC'))
+            self.controllerList.append(BuildingController(alias, devices))
 
     def FlexibilityInit(self):
         '''
@@ -47,17 +59,24 @@ class CommunityController:
         for alias in self.controlAliasList:
             self.flexibilityList.append(FlexibilityMetricPredictor())
 
-    def Step(self, values, currentTime):
+    def Step(self, sensorValues, currentTime):
         '''
         Run every time step
         Returns a list of dicts containing the control events for each house. Matches controls API format except for device IDs
         '''
-        # Update controllers
-        controlEvents = {}
-        for i, alias in enumerate(self.controlAliasList):
-            self.controllerList[i].Step(values, currentTime)
+        # Forecast flexibility
 
-            controlEvents[alias] = self.controllerList[i].actuatorValues
+        # Update coordinator
+        self.coordinator.Step(self.predictedLoad, self.predictedFlex)
+        coordinateSignals = self.coordinator.reductionFactor
+
+        # Update controllers
+        controlEvents = []
+        for i, alias in enumerate(self.controlAliasList):
+            trajectories = self.controllerList[i].Step(sensorValues[alias], coordinateSignals[:,i], currentTime)
+            self.trajectoryList.append(trajectories)
+            self.predictedLoad[:, i] += trajectories['u'].detach().numpy().reshape(self.nsteps, 1)
+            controlEvents.append(self.controllerList[i].controlEvents)
         
         return controlEvents
 

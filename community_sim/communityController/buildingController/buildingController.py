@@ -1,10 +1,11 @@
-import json
 import pandas as pd
 import numpy as np
-import torch
+import os
 
-from buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, Normalizer, ModeClassifier
-from buildingController.thermal_node_model.runManager import RunManager
+from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, Normalizer, ModeClassifier
+from communityController.buildingController.thermal_node_model.runManager import RunManager
+
+import torch
 
 class BuildingController:
     """
@@ -19,16 +20,21 @@ class BuildingController:
         pv: (ndarray[float]) predicted PV generation
         dist: (ndarray[float]) predicted disturbances (outdoor temperature)
     """
-    def __init__(self, id):
+    def __init__(self, id, devices):
         """
         Constructor
         Parameters:
             id: (str) id of the controller's building
             testCase: (str) name of test case being run, defaults to MPC
         """
-        self.actuatorValues = {'heatingSetpoint': 0, 'coolingSetpoint': 0}
+        self.actuatorValues = {'heatingSetpoint': 0, 'coolingSetpoint': 0, 'battery': 3.8}
         self.sensorValues = {'indoorAirTemp': 0}
         self.buildingID = id
+        self.devices = devices
+
+        self.controlEvents = []
+
+        self.dirName = os.path.dirname(__file__)
 
         # HVAC Values
         self.HVAC_mode = 0
@@ -39,8 +45,10 @@ class BuildingController:
         # Load building specific parameters
         self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 4.444444444444445}      # Default value, should be commented out
         # Temporary, needs to be fixed later
-        self.setpointSchedule = pd.read_csv('../../setpointSchedule.csv', header=None).to_numpy()[np.newaxis, :, np.newaxis]
-        self.weather = pd.read_csv('../../results/summer/1_out.csv', usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
+        self.setpointSchedule = pd.read_csv(os.path.join(self.dirName, '../../setpointSchedule.csv')
+                                            , header=None).to_numpy()[np.newaxis, :]
+        self.weather = pd.read_csv(os.path.join(self.dirName, '../../results/summer/1_out.csv')
+                                   , usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
         self.weather.set_index(pd.to_datetime(self.weather['Time'], format="%Y-%m-%d %H:%M:%S"), inplace=True)
         self.weather.drop('Time', axis=1, inplace=True)
 
@@ -51,7 +59,7 @@ class BuildingController:
         self.HVAC_prevMode = 0
 
     # Placeholder database functions (for deployment)
-    def PullSensorValues(self, sensorValues, currentTime):
+    def PullSensorValues(self, sensorValues, coordinateSignals, currentTime):
         """
         Pull sensor data from database
         """
@@ -71,21 +79,26 @@ class BuildingController:
                             'y': torch.tensor(np.array([y])[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'ymin': torch.tensor(ymin, dtype=torch.float32),
                             'ymax': torch.tensor(ymax, dtype=torch.float32),
-                            'd': torch.tensor(d, dtype=torch.float32)}
+                            'd': torch.tensor(d, dtype=torch.float32),
+                            'dr': torch.tensor(np.zeros((1,self.nsteps,1)), dtype=torch.float32)}
 
     def PushControlSignals(self):
         """
         Push control signals to actuators
         """
-        pass
+        self.controlEvents = {}
+        self.controlEvents['location'] = self.buildingID
+        self.controlEvents['devices'] = {'coolingSetpoint':  self.actuatorValues['coolingSetpoint'],
+                                         'heatingSetpoint': self.actuatorValues['heatingSetpoint'],
+                                         'battery': self.actuatorValues['battery']}
 
-    def Step(self, sensorValues, currentTime):
+    def Step(self, sensorValues, coordinateSignals, currentTime):
         """
         Main function to be run every time step, runs all control functions
         """
 
         # Pull data from sensors
-        self.PullSensorValues(sensorValues, currentTime)
+        self.PullSensorValues(sensorValues, coordinateSignals, currentTime)
 
         # Control functions
         trajectories = self.PredictiveControl()
@@ -151,10 +164,13 @@ class BuildingController:
 
         run = 'latestRun'
 
-        filePath = 'thermal_node_model'
+        # Path relative to the directory the sim is being run in. Needs to be fixed
+        filePath = os.path.join(self.dirName, 'thermal_node_model')
 
         manager = RunManager(run, saveDir=f'{filePath}/savedRuns')
         manager.LoadRunJson(run)
+        norm = Normalizer()
+        norm.load(f"{manager.runPath}norm/{self.buildingID}/")
 
         for key in manager.models.keys():
             if key.find('buildingThermal') != -1:
@@ -178,7 +194,7 @@ class BuildingController:
                                        name=thermalModelName,
                                        device=device,
                                        debugLevel = 0,
-                                       saveDir=f"{filePath}/{manager.runPath+thermalModelName}/{self.buildingID}")
+                                       saveDir=f"{manager.runPath+thermalModelName}/{self.buildingID}")
         buildingThermal.CreateModel()
 
         buildingThermal.TrainModel(dataset=None, load=True, test=False)
@@ -193,7 +209,7 @@ class BuildingController:
                                     name=classifierModelName,
                                     device=device,
                                     debugLevel = 0,
-                                    saveDir=f"{filePath}/{manager.runPath+classifierModelName}")
+                                    saveDir=f"{manager.runPath+classifierModelName}")
         classifier.CreateModel()
 
         classifier.TrainModel(dataset=None, load=True, test=False)
@@ -209,11 +225,12 @@ class BuildingController:
                                          d_idx=initParams['d_idx'],
                                          manager=manager,
                                          name=controllerModelName,
+                                         norm=norm,
                                          thermalModel=buildingThermal.model,
                                          classifier=classifier.model,
                                          device=device,
                                          debugLevel=0,
-                                         saveDir=f"{filePath}/{manager.runPath+controllerModelName}/{self.buildingID}")
+                                         saveDir=f"{manager.runPath+controllerModelName}/{self.buildingID}")
         controlSystem.CreateModel()
 
         controlSystem.TrainModel(dataset=None, tempMin=None, tempMax=None, load=True, test=False)

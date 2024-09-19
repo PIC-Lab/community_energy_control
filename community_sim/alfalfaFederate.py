@@ -63,7 +63,7 @@ ac = AlfalfaClient(host='http://localhost')
 
 # Define paths to models to by uploaded
 model_paths = list(Path('./building_models').iterdir())
-model_paths = [Path('./building_models/1')]
+# model_paths = [Path('./building_models/1')]
 
 # Upload sites to alfalfa
 site_ids = ac.submit(model_paths)
@@ -132,6 +132,7 @@ for step, current_time in enumerate(times):
         controlEvents = h.helicsInputGetString(subid['control_events'])
         controlEvents = json.loads(controlEvents)
         logger.debug("Recieved updated value for control_events")
+        logger.debug(controlEvents)
     else:
         controlEvents = {}
             
@@ -155,10 +156,17 @@ for step, current_time in enumerate(times):
         # Parse control events
         for controlSet in controlEvents:
             location = controlSet['location']
-            for key, value in controlSet['devices']:
-                if key == 'Battery':
+            input_dicts[location] = {}
+            for key, value in controlSet['devices'].items():
+                if 'Battery' in key:
                     continue
-                input_dicts[alias][value] = controlSet['status']
+                input_dicts[location][key] = value
+        # for alias, controlSet in controlEvents.items():
+        #     location = controlSet['location']
+        #     for key, value in controlSet['devices']:
+        #         if key == 'Battery':
+        #             continue
+        #         input_dicts[alias][value] = controlSet['status']
 
         # Push updates to inputs to alfalfa
         ac.set_inputs(site, input_dicts[alias])
@@ -175,8 +183,12 @@ for step, current_time in enumerate(times):
         indoorTemp[alias] = alf_outs['living space Air Temperature']
 
     # Publish values
+    logger.debug("Publishing values to other federates")
     h.helicsPublicationPublishString(pubid['load_powers'], json.dumps(loadPowers))
     h.helicsPublicationPublishString(pubid['indoor_temp'], json.dumps(indoorTemp))
+
+    logger.debug(loadPowers)
+    logger.debug(indoorTemp)
 
     # Advance the model
     if step < duration / stepsize:          # Don't advance alfalfa on the last iteration of the loop

@@ -80,6 +80,18 @@ element_results = []
 load_powers_results = []
 battery_results = []
 
+def recurse(d):
+    try:
+        if isinstance(d, dict):
+            loaded_d = d
+        else:
+            loaded_d = json.loads(d)
+        for k, v in loaded_d.items():
+            loaded_d[k] = recurse(v)
+    except(json.JSONDecodeError, TypeError):
+        return d
+    return loaded_d
+
 # Execute federate and start co-sim
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
@@ -97,6 +109,7 @@ for step, current_time in enumerate(times):
         loadPowers = h.helicsInputGetString(subid['load_powers'])
         loadPowers = json.loads(loadPowers)
         logger.debug("Recieved updated value for load_powers")
+        logger.debug(loadPowers)
     else:
         loadPowers = {}
 
@@ -105,20 +118,24 @@ for step, current_time in enumerate(times):
         controlEvents = h.helicsInputGetString(subid['control_events'])
         controlEvents = json.loads(controlEvents)
         logger.debug("Recieved updated value for control_events")
+        logger.debug(controlEvents)
     else:
         controlEvents = {}
 
     # load
     for loadName, set_point in loadPowers.items():
+        if loadName in ['3', '4']:
+            continue
         dss.set_power(loadName, element='Load', p=set_point)
 
     # Battery control
     for controlSet in controlEvents:
             location = controlSet['location']
-            for key, value in controlSet['devices']:
-                if key == 'Battery':
-                    # dss.set_property(value['device'], 'state', value['state'], element='Storage')
-                    dss.set_property('Battery1', 'state', 'Charge', element='Storage')
+            for key, value in controlSet['devices'].items():
+                if 'Battery' in key:
+                    pass
+                    # dss.set_property(key+'1', 'State', value, element='Storage')
+                    # dss.set_property('Battery1', 'state', 'Charge', element='Storage')
                 else:
                     continue
 
@@ -126,6 +143,7 @@ for step, current_time in enumerate(times):
     dss.run_dss()
 
     # Publish battery results
+    logger.debug("Publishing values to other federates")
     battery_data = dss.get_all_elements('Storage')
     logger.debug(battery_data["%stored"].to_dict())
     h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(battery_data['%stored'].to_dict()))
@@ -140,6 +158,8 @@ for step, current_time in enumerate(times):
     # Get load data
     load_powers_data = {}
     for loadName in loadPowers:
+        if loadName in ['3', '4']:
+            continue
         load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})    
     load_powers_results.append(load_powers_data)
     

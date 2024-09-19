@@ -1,5 +1,7 @@
 import numpy as np
 import cvxpy as cp
+import json
+import os
 from communityController.coordinator.convex_problem import ConvexProblem
 
 class Coordinator():
@@ -7,15 +9,24 @@ class Coordinator():
     Class for the community coordinator
     '''
 
-    def __init__(self, numBuildings, n):
+    def __init__(self, numBuildings, nsteps):
         '''
         Constructor
         '''
         self.numBuildings = numBuildings
-        self.n = n
+        self.nsteps = nsteps
+
+        self.reductionFactor = np.zeros((self.nsteps, self.numBuildings))
+        self.predictedLoad = np.zeros((self.nsteps, self.numBuildings))
+        self.predictedFlexibility = np.zeros((self.nsteps, self.numBuildings))
+        self.countSinceChange = 0
+
+        self.dirName = os.path.dirname(__file__)
+        with open(os.path.join(self.dirName, 'transInfo.json')) as fp:
+            self.transInfo = json.load(fp)
 
         self.assessProb = AssessOptimization()
-        self.adjustProb = AdjustOptimization()    
+        self.adjustProb = AdjustOptimization(self.numBuildings, self.nsteps)
     
     def TransformerOverload(self):
         '''
@@ -25,7 +36,7 @@ class Coordinator():
 
     def DemandResponse(self):
         '''
-        Decides if the community can/should respond to a demand response signal
+        Decides if the community should respond to a demand response signal
         '''
         pass
 
@@ -33,7 +44,15 @@ class Coordinator():
         '''
         Assess phase: Determines if the community can/should adjust planned consumption
         '''
-        pass
+
+        # Can adjust?
+        # Check flexibility
+
+        # Should adjust?
+        # Check transformers
+        self.TransformerOverload()
+        # Check demand response
+        self.DemandResponse()
 
     def Adjust(self):
         '''
@@ -45,7 +64,18 @@ class Coordinator():
         '''
         Dispatch phase: Format desired consumption changes as control signals to be provided to each house
         '''
-        pass
+        self.countSinceChange += 1
+        if self.countSinceChange > 10:
+            self.reductionFactor[:10,:] = np.ones((10, self.numBuildings)) * np.random.randint(0, 2)
+            self.countSinceChange = 0
+
+    def Step(self, predictedLoad, predictedFlex):
+        '''
+        '''
+        if self.Assess():
+            self.Adjust()
+            self.Dispatch()
+        
 
 class AssessOptimization(ConvexProblem):
     '''
@@ -57,6 +87,30 @@ class AssessOptimization(ConvexProblem):
         Constructor
         '''
         super().__init__()
+
+        self.DefineProblem()
+
+    def DefineProblem(self):
+        '''
+        Define the optimization problem used in the assess phase to decide if responding to a demand response signal is worth it for the community
+        '''
+        pass
+
+class AdjustOptimization(ConvexProblem):
+    '''
+    Optimization problem for the adjust phase
+    '''
+
+    def __init__(self, numBuildings, nsteps):
+        '''
+        Constructor
+        '''
+        super().__init__()
+
+        self.numBuildings = numBuildings
+        self.n = nsteps
+
+        self.DefineProblem()
 
     def DefineProblem(self):
         '''
@@ -72,8 +126,8 @@ class AssessOptimization(ConvexProblem):
         W1 = 2
         W2 = 1
 
-        flexMax = cp.Parameter((self.numBuilding, self.n), name='flexMax')
-        flexMin = cp.Parameter((self.numBuilding, self.n), name='flexMin')
+        flexMax = cp.Parameter((self.numBuildings, self.n), name='flexMax')
+        flexMin = cp.Parameter((self.numBuildings, self.n), name='flexMin')
 
         objective = cp.Minimize(W1*usagePenalty@flexLoad@np.ones(self.n)+W2*cp.max(flexLoad, axis=0)@np.ones(self.n))
         constraints = []
@@ -82,20 +136,3 @@ class AssessOptimization(ConvexProblem):
         constraints.append(cp.sum(flexLoad, axis=0) >= dr_reduce)
 
         self.adjustProb = cp.Problem(objective, constraints)
-
-class AdjustOptimization(ConvexProblem):
-    '''
-    Optimization problem for the adjust phase
-    '''
-
-    def __init__(self):
-        '''
-        Constructor
-        '''
-        super().__init__()
-
-    def DefineProblem(self):
-        '''
-        Define the optimization problem used in the assess phase to decide if responding to a demand response signal is worth it for the community
-        '''
-        pass

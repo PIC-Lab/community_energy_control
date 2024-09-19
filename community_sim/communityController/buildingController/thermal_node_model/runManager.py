@@ -7,15 +7,18 @@ class RunManager():
         '''Constructor'''
 
         self.name = name
-        self.saveDir = saveDir
+        dirName = os.path.dirname(__file__)
+        self.saveDir = os.path.join(dirName, saveDir)
         self.models = {}
         self.dataset = {"path": '', "sliceBool": False, "slice_idx": [0,0]}
 
         self.tempBounds = []
 
+        
         self.runPath = self.saveDir+'/latestRun/'
 
         if not(os.path.exists(self.saveDir)):
+            print("SaveDir does not exist, creating it")
             os.mkdir(self.saveDir)
 
     def WriteRunJson(self):
@@ -100,13 +103,19 @@ class RunManager():
         newPath = saveDir+'/'+runJson['name']
         if os.path.isdir(newPath):
             userInput = input("There is already a run with this name. Please enter a new name, or leave blank to overwrite existing run. ")
-            if userInput.lower() == '':
-                shutil.rmtree(newPath)
-            else:
-                runJson['name'] = userInput
-                newPath = saveDir+'/'+runJson['name']
-                if os.path.isdir(newPath):
+            looping = True
+            while looping:
+                if userInput.lower() == '':
                     shutil.rmtree(newPath)
+                    looping = False
+                else:
+                    runJson['name'] = userInput
+                    newPath = saveDir+'/'+runJson['name']
+                    if os.path.isdir(newPath):
+                        print('WARNING: There is also already a run with this name.')
+                        userInput = input('Please enter a different name, or leave blank to overwrite existing run. ')
+                    else:
+                        looping = False
 
         os.rename(oldPath, newPath)
 
