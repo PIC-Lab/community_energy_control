@@ -103,7 +103,7 @@ for step, current_time in enumerate(times):
     
     sensorValues = {alias: {} for alias in aliasesSensorIdx}
     for key, value in batterySOC.items():
-        sensorValues[simIdxMapping[key]]['batterySOC'] = value
+        sensorValues[simIdxMapping[key[key.index('y')+1:]]]['batterySOC'] = value
     for key, value in indoorTemp.items():
         if key in simParams['controlledAliases']:
             sensorValues[simIdxMapping[key]]['indoorTemp'] = value
@@ -128,11 +128,11 @@ for step, current_time in enumerate(times):
     for alias in aliasesSensorIdx:
         controlTraj = {}
         controlTraj['Time'] = current_time
-        controlTraj['Control Effort'] = controller.trajectories['u'][0,0,0].detach().item()
-        controlTraj['Predicted Temperature'] = controller.trajectories['y'][0,0,0].detach().item()
-        controlTraj['Ymax'] = controller.trajectories['ymax'][0,0,0].detach().item()
-        controlTraj['Ymin'] = controller.trajectories['ymin'][0,0,0].detach().item()
-        controlTraj['dr'] = controller.trajectories['dr'][0,0,0].detach().item()
+        controlTraj['Control Effort'] = controller.trajectoryList[alias]['u'][0,0,0].detach().item()
+        controlTraj['Predicted Temperature'] = controller.trajectoryList[alias]['y'][0,0,0].detach().item()
+        controlTraj['Ymax'] = controller.trajectoryList[alias]['ymax'][0,0,0].detach().item()
+        controlTraj['Ymin'] = controller.trajectoryList[alias]['ymin'][0,0,0].detach().item()
+        controlTraj['dr'] = controller.trajectoryList[alias]['dr'][0,0,0].detach().item()
         outputs[alias].append(controlTraj)
 
     logger.debug("Publishing values to other federates")

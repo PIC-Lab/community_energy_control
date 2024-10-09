@@ -24,6 +24,7 @@ class Coordinator():
         self.dirName = os.path.dirname(__file__)
         with open(os.path.join(self.dirName, 'transInfo.json')) as fp:
             self.transInfo = json.load(fp)
+        self.overloadList = []
 
         self.assessProb = AssessOptimization()
         self.adjustProb = AdjustOptimization(self.numBuildings, self.nsteps)
@@ -32,13 +33,22 @@ class Coordinator():
         '''
         Checks if the community will overload the transformer in the near future
         '''
-        pass
+        self.overloadList = []
+        overload = False
+        for key, value in self.transInfo.items():
+            temp = value['rating'] <= self.predictedLoad[:,int(value['Buildings'][0]):int(value['Buildings'][-1])]
+            self.overloadList.append(temp)
+            # Check if overload occurs at any point
+            if any(temp):
+                overload = True
+
+        return overload
 
     def DemandResponse(self):
         '''
         Decides if the community should respond to a demand response signal
         '''
-        pass
+        return False
 
     def Assess(self):
         '''
@@ -50,9 +60,8 @@ class Coordinator():
 
         # Should adjust?
         # Check transformers
-        self.TransformerOverload()
-        # Check demand response
-        self.DemandResponse()
+        return self.TransformerOverload() or self.DemandResponse()
+
 
     def Adjust(self):
         '''

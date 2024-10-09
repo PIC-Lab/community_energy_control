@@ -2,9 +2,11 @@ import torch
 import numpy as np
 import pandas as pd
 import shutil
+import json
 
 import runManager
 from modelConstructor import *
+from neuro_util import Normalizer
 
 def Main():
     # torch.manual_seed(0)
@@ -78,14 +80,14 @@ def Main():
         # Building thermal model
         thermalModelName = "buildingThermal"
         manager.models[thermalModelName] = {
-            'hsizes': [200,200],
+            'hsizes': [200,200,200],
             'train_params': {
                 'max_epochs': 1000,
                 'patience': 50,
                 'warmup': 100,
                 'lr': 0.0001,
                 'nsteps': 60,
-                'batch_size': 30
+                'batch_size': 50
             }
         }
 
@@ -106,8 +108,8 @@ def Main():
         # Controller model
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
-            'weights': {'action_loss': 0.01, 'dr_loss': 4.0,
-                        'x_min': 10.0, 'x_max': 10.0},
+            'weights': {'action_loss': 0.01, 'dr_loss': 1.0, 'cost_loss': 1.0,
+                        'x_min': 10.0, 'x_max': 10.0, 'bat_min': 100.0, 'bat_max': 100.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
             'hsizes': [200,200],
@@ -162,12 +164,14 @@ def Main():
         manager.WriteRunJson()
 
     # Get building ids
+    with open('../../../simParams.json') as fp:
+        simParams = json.load(fp)
     buildingModels = Path('../../../building_models/')
     buildings = []
     for file in buildingModels.iterdir():
-        if (file / 'workflow.osw').exists():
+        if (file / 'workflow.osw').exists() and (file.name in simParams['controlledAliases']):
             buildings.append(file.name)
-    # buildings = ['4']
+    buildings = ['4']
 
     # ------------ Train classifier ------------
     tempList = []
@@ -208,26 +212,31 @@ def Main():
     while(i < len(buildings)):
         building = buildings[i]
         print(f"Training models for building {building}, round {count}")
-        # Temporary, fix when training all buildings
         alfData = pd.read_csv(manager.dataset['path']+f'{building}_out.csv', usecols=['Time', 'living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature'], nrows=57600)
+        dates = pd.to_datetime(alfData['Time'], format='%Y-%m-%d %H:%M:%S')
+        alfData['Price'] = dates.apply(lambda x: TOUPricing(x, timeSteps=1440))
 
         if manager.dataset['sliceBool']:
-            raw_dataset = alfData.loc[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1], ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature']].copy()
+            raw_dataset = alfData.loc[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1], ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
         else:
-            raw_dataset = alfData.loc[:, ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature']].copy()
+            raw_dataset = alfData.loc[:, ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
 
         print(raw_dataset.describe())
 
         norm = Normalizer()
         norm.add_data(raw_dataset)
-        norm.add_data(raw_dataset, keys=['y', 'u', 'd'])
+        norm.add_data(raw_dataset, keys=['y', 'u', 'd', 'p'])
+        norm.dataInfo['p']['min'] = 0
         norm.save(f"{manager.runPath}norm/{building}/")
-        dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'd'])
+        dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'd', 'p'])
+
+        print(dataset_norm.describe())
 
         dataset = {}
         dataset['X'] = dataset_norm['living space Air Temperature'].to_numpy()[:, np.newaxis]
         dataset['U'] = dataset_norm['Electricity:HVAC'].to_numpy()[:, np.newaxis]
         dataset['D'] = dataset_norm['Site Outdoor Air Temperature'].to_numpy()[:, np.newaxis]
+        dataset['I'] = dataset_norm['Price'].to_numpy()[:,np.newaxis]
 
         # Bounds on indoor temperature
         tempMin = torch.tensor(norm.norm(manager.tempBounds[0], keys=['y'])).to(device=device)
@@ -241,7 +250,7 @@ def Main():
                                     manager=manager,
                                     name=thermalModelName,
                                     device=device,
-                                    debugLevel = DebugLevel.EPOCH_LOSS,
+                                    debugLevel = DebugLevel.EPOCH_VALUES,
                                     saveDir=f"{manager.runPath+thermalModelName}/{building}")
             buildingThermal.CreateModel()
 
@@ -257,6 +266,7 @@ def Main():
                                         nu=dataset['U'].shape[1],
                                         nd=dataset['D'].shape[1],
                                         nd_obs=1,
+                                        ni=2,
                                         ny=1,
                                         y_idx=[0],
                                         d_idx=[0],

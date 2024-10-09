@@ -1,7 +1,7 @@
 {
     "start": "07/01/23",
     "step": "1m",
-    "duration": "24hr",
+    "duration": "48hr",
     "warmup": "5m",
     "testCase": "base",
     "controlledAliases": ["2", "3", "4", "5", "9", "10", "12", "15", "17", "22", "24", "25", "26", "27", "28"]

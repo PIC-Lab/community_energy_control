@@ -4,14 +4,17 @@ from torch.utils.data import DataLoader
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import json
-import copy
 from pathlib import Path
-from enum import Enum
-import numbers
 import imageio
 import os
 import shutil
+import datetime as dt
+import typing
+from abc import ABC, abstractmethod
+from enum import Enum
+import numbers
+import copy
+import json
 
 import neuromancer.psl as psl
 from neuromancer.system import Node, System
@@ -24,28 +27,38 @@ from neuromancer.trainer import Trainer
 from neuromancer.dynamics import integrators
 from neuromancer.loggers import BasicLogger
 from neuromancer.callbacks import Callback
+import neuromancer.slim as slim
 
-class BuildingNode():
-    def __init__(self, nx, nu, nd, manager, name, device, debugLevel, saveDir=None):
+class NeuromancerModel(ABC):
+    '''
+    Base class for neuromancer models
+    Attributes:
+        manager: (RunManager) object that keeps track of various parameters about the model
+        nsteps: (int) number of timesteps the model is expected to forecast
+        batch_size: (int) number of samples per batch
+        max_epochs: (int) maximum epochs for training
+        patience: (int) minimum number of epochs since improvement to end training early
+        warmup: (int) minimum number of epochs for training
+        lr: (float) learning rate for training
+        device: (torch.device) device the training will be run on
+        callback: (neuromancer.Callback) callback function used to debug mid-training
+        saveDir: (str) directory where the model and test outputs will be saved
+        runName: (str) name of the overall training run
+        model: (neuromancer.Node) object containing the model
+        problem: (neuromancer.Problem) optimization problem for training the model
+        testData: (dict) dictionary containing the section of the dataset used for testing
+    '''
+    def __init__(self, manager, name:str, device:torch.device, debugLevel, saveDir:str):
         '''
-        Constructor function
-        Inputs:
-            nx: (int) number of states
-            nu: (int) number of control signals
-            nd: (int) number of disturbances
-            manager (RunManager) object that keeps track of various model parameters
-            name: (str) name of the model
-            device: (torch.device) device to run training on
-            debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
-            saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
-        '''
-        self.nx = nx
-        self.nu = nu
-        self.nd = nd
+        Constructor
 
+        :param manager: (RunManager) object that keeps track of various model parameters
+        :param name: (str) name of the model
+        :param device: (torch.device) device to run training on
+        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
+        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
+        '''
         self.manager = manager
-
-        self.hsizes = manager.models[name]['hsizes']
 
         train_params = manager.models[name]['train_params']
         self.nsteps = train_params['nsteps']
@@ -56,31 +69,133 @@ class BuildingNode():
         self.lr = train_params['lr']
         self.device = device
 
-        self.callback = Callback_NODE(debugLevel)
-
         if saveDir is None:
             self.saveDir = name
-            # self.saveDir = 'buildingNODE coolRand'
-            # self.saveDir = 'buildingNODE test'
         else:
             self.saveDir = saveDir
+
+        self.callback = Callback_Basic(debugLevel)
 
         self.runName = manager.name
 
         self.model = None
         self.problem = None
         self.testData = None
-        self.loss = None
+
+    @abstractmethod
+    def PrepareDataset(self, dataset):
+        '''
+        Set up and batch dataset into desired training split
+        Empty method designed to be overridden by a child class
+        '''
+        pass
+
+    def TrainModel(self, dataset, load):
+        '''
+        Trains building thermal system or loads from file
+
+        :param dataset: (dict) normalized dataset split into states (X), inputs (U), and disturbances (D)
+        :param load: (bool) load model from file instead of training
+        '''
+        # 
+        trainLoader, devLoader, testData = self.PrepareDataset(dataset)
+        self.testData = testData
+
+        # If load is true, skip training and just load from state dict file
+        if load:
+            self.LoadModel()
+            return
+
+        optimizer = torch.optim.Adam(self.problem.parameters(), lr = self.lr)
+        logger = BasicLogger(args=None,
+                             savedir=self.saveDir,
+                             verbosity=1,
+                             stdout=['dev_loss', 'train_loss'])
+        
+        trainer = Trainer(self.problem,
+                          trainLoader,
+                          devLoader,
+                          testData,
+                          optimizer,
+                          patience=self.patience,
+                          warmup=self.warmup,
+                          epochs=self.max_epochs,
+                          eval_metric='dev_loss',
+                          train_metric='train_loss',
+                          dev_metric='dev_loss',
+                          test_metric='dev_loss',
+                          logger=logger,
+                          device=self.device,
+                          callback=self.callback)
+
+        best_model = trainer.train()
+        self.problem.load_state_dict(best_model)
+
+    def LoadModel(self):
+        '''
+        Loads the model from previously saved weights
+        Call this directly when deploying
+        '''
+        self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth', weights_only=True))
+        self.problem.eval()
+
+    def PlotLoss(self):
+        '''
+        Plots the training and validation loss of the epochs
+        '''
+        # Should only run if the model was trained on this run instead of loaded from a file
+        if (self.callback.debugLevel < DebugLevel.EPOCH_LOSS) or (len(self.callback.loss) == 0):
+            print("Model was not trained at sufficiently high debug level or was loaded from a file. Loss plots will not be created.")
+            return
+        
+        # Plotting
+        loss_df = pd.DataFrame(self.callback.loss)
+        loss_df = loss_df[['train_loss', 'dev_loss']]
+        loss_df['train_loss'] = loss_df['train_loss'].apply(lambda x: x.detach().item())
+        loss_df['dev_loss'] = loss_df['dev_loss'].apply(lambda x: x.detach().item())
+        loss_df.to_csv(self.saveDir+'/loss.csv', index=False)
+        fig = plt.figure()
+        plt.plot(loss_df)
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend(loss_df.keys())
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/building_loss', dpi=fig.dpi)
+        plt.close(fig)
+
+class BuildingNode(NeuromancerModel):
+    def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
+        '''
+        Constructor function
+
+        :param nx: (int) number of states
+        :param nu: (int) number of control signals
+        :param nd: (int) number of disturbances
+        :param manager (RunManager) object that keeps track of various model parameters
+        :param name: (str) name of the model
+        :param device: (torch.device) device to run training on
+        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
+        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
+        '''
+        super().__init__(manager, name, device, debugLevel, saveDir)
+
+        self.nx = nx
+        self.nu = nu
+        self.nd = nd
+
+        self.hsizes = self.manager.models[name]['hsizes']
+
+        self.callback = Callback_NODE(debugLevel, self.saveDir)
 
     def PrepareDataset(self, dataset):
         '''
         Prepare data for training and testing of building thermal model
-        Inputs:
-            dataset: (dict) normalized dataset split into states (X), inputs (U), and disturbances (D)
-        Outputs:
-            trainLoader: (DataLoader) DataLoader object for training
-            devLoader: (DataLoader) DataLoader object for validation
-            testData: (dict) Batched dataset designated for testing
+
+        :param dataset: (dict) normalized dataset split into states (X), inputs (U), and disturbances (D)
+
+        :return trainLoader: (DataLoader) DataLoader object for training
+        :return devLoader: (DataLoader) DataLoader object for validation
+        :return testData: (dict) Batched dataset designated for testing
         '''
         n = len(dataset['X'])
 
@@ -112,7 +227,7 @@ class BuildingNode():
         for key, value in trainData.datadict.items():
             print(key, value.shape)
         trainLoader = DataLoader(trainData, batch_size=self.batch_size,
-                                collate_fn=trainData.collate_fn, shuffle=True)
+                                collate_fn=trainData.collate_fn, shuffle=False)
         
         devX = dev['X'].reshape(nbatch*2, self.nsteps, self.nx)
         devX = torch.tensor(devX, dtype=torch.float32, device=self.device)
@@ -178,49 +293,6 @@ class BuildingNode():
         if self.callback.debugLevel > DebugLevel.NO:
             self.problem.show(self.manager.runPath+'NODE_optim.png')
 
-    def TrainModel(self, dataset, load, test=True):
-        '''
-        Trains building thermal system or loads from file
-        Inputs:
-            dataset: (dict) normalized dataset split into states (X), inputs (U), and disturbances (D)
-            load: (bool) load model from file instead of training
-        '''
-
-        if test:
-            trainLoader, devLoader, testData = self.PrepareDataset(dataset)
-            self.testData = testData
-
-        # If load is true, skip training and just load from state dict file
-        if load:
-            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth', weights_only=True))
-            self.problem.eval()
-            return
-
-        optimizer = torch.optim.Adam(self.problem.parameters(), lr = self.lr)
-        logger = BasicLogger(args=None,
-                             savedir=self.saveDir,
-                             verbosity=1,
-                             stdout=['dev_loss', 'train_loss'])
-        
-        trainer = Trainer(self.problem,
-                          trainLoader,
-                          devLoader,
-                          testData,
-                          optimizer,
-                          patience=self.patience,
-                          warmup=self.warmup,
-                          epochs=self.max_epochs,
-                          eval_metric='dev_loss',
-                          train_metric='train_loss',
-                          dev_metric='dev_loss',
-                          test_metric='dev_loss',
-                          logger=logger,
-                          device=self.device,
-                          callback=self.callback)
-
-        best_model = trainer.train()
-        self.problem.load_state_dict(best_model)
-
     def TestModel(self):
         '''Plots the testing of the building thermal model'''
         dynamics_model = self.problem.nodes[0]
@@ -279,8 +351,7 @@ class BuildingNode():
             ax.plot(t1, 'c', linewidth=lw, label="True")
             ax.plot(t2, 'm--', linewidth=lw, label='Pred')
         ax.tick_params(labelbottom=False, labelsize=fs)
-        ax.set_title("Indoor Air Temperature (Normalized)", fontsize=fs)
-        ax.set_ylabel('y', rotation=0, labelpad=20, fontsize=fs)
+        ax.set_ylabel('Indoor Air Temperature (Normalized)', rotation=0, labelpad=20, fontsize=fs)
         ax.tick_params(labelbottom=True, labelsize=fs)
         # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
         ax.legend(fontsize=fs)
@@ -289,66 +360,32 @@ class BuildingNode():
         plt.close(fig)
 
         # Plot training and validation loss
-        # Should only run if the model was trained on this run instead of loaded from a file
-        if (self.callback.debugLevel >= DebugLevel.EPOCH_LOSS) and (len(self.callback.loss) > 0):
-            loss_df = pd.DataFrame(self.callback.loss)
-            loss_df = loss_df[['train_loss', 'dev_loss']]
-            loss_df['train_loss'] = loss_df['train_loss'].apply(lambda x: x.detach().item())
-            loss_df['dev_loss'] = loss_df['dev_loss'].apply(lambda x: x.detach().item())
-            loss_df.to_csv(self.saveDir+'/loss.csv', index=False)
-            fig = plt.figure()
-            plt.plot(loss_df)
-            plt.xlabel('Epoch')
-            plt.ylabel('Loss')
-            plt.legend(loss_df.keys())
-            plt.tight_layout()
-            fig.savefig(self.saveDir+'/building_loss', dpi=fig.dpi)
-            plt.close(fig)
+        self.PlotLoss()
 
-class ModeClassifier():
-    def __init__(self, nm, nu,  manager, name, device, debugLevel, saveDir=None):
+class ModeClassifier(NeuromancerModel):
+    def __init__(self, nm:int, nu:int,  manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
         '''
         Constructor function
-        Inputs:
-            nm: (int) number of hvac modes
-            nu: (int) number of control signals
-            manager (RunManager) object that keeps track of various model parameters
-            name: (str) name of the model
-            device: (torch.device) device to run training on
-            debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
-            saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
+
+        :param nm: (int) number of hvac modes
+        :param nu: (int) number of control signals
+        :param manager (RunManager) object that keeps track of various model parameters
+        :param name: (str) name of the model
+        :param device: (torch.device) device to run training on
+        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
+        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
         '''
+        super().__init__(manager, name, device, debugLevel, saveDir)
+
         self.nm = nm
         self.nu = nu
-        
-        self.manager = manager
 
-        self.hsizes = manager.models[name]['hsizes']
-
-        train_params = manager.models[name]['train_params']
-        self.nsteps = train_params['nsteps']
-        self.batch_size = train_params['batch_size']
-        self.max_epochs = train_params['max_epochs']
-        self.patience = train_params['patience']
-        self.warmup = train_params['warmup']
-        self.lr = train_params['lr']
-        self.device = device
-
-        self.callback = Callback_NODE(debugLevel)
-
-        if saveDir is None:
-            self.saveDir = name
-        else:
-            self.saveDir = saveDir
-
-        self.runName = manager.name
-
-        self.model = None
-        self.problem = None
-        self.testData = None
-        self.loss = None
+        self.hsizes = self.manager.models[name]['hsizes']
 
     def PrepareDataset(self, dataset):
+        '''
+        Prepare dataset for training
+        '''
         n = len(dataset['M'])
 
         train = {}
@@ -418,44 +455,10 @@ class ModeClassifier():
 
         self.problem = Problem([system], loss)
 
-    def TrainModel(self, dataset, load, test=True):
-
-        if test:
-            trainLoader, devLoader, testData = self.PrepareDataset(dataset)
-            self.testData = testData
-
-        # If load is true, skip training and just load from state dict file
-        if load:
-            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth', weights_only=True))
-            self.problem.eval()
-            return
-
-        optimizer = torch.optim.Adam(self.problem.parameters(), lr = self.lr)
-        logger = BasicLogger(args=None, savedir=self.saveDir, verbosity=1,
-                            stdout=['dev_loss', 'train_loss'])
-        
-        trainer = Trainer(self.problem,
-                          trainLoader,
-                          devLoader,
-                          testData,
-                          optimizer,
-                          patience=self.patience,
-                          warmup=self.warmup,
-                          epochs=self.max_epochs,
-                          eval_metric='dev_loss',
-                          train_metric='train_loss',
-                          dev_metric='dev_loss',
-                          test_metric='dev_loss',
-                          logger=logger,
-                          callback=self.callback,
-                          device=self.device
-        )
-
-        print("----- Training classifier -----")
-        best_model = trainer.train()
-        self.problem.load_state_dict(best_model)
-
     def TestModel(self):
+        '''
+        Create plots from test data
+        '''
         dynamics_model = self.problem.nodes[0]
         dynamics_model.nsteps = self.testData['m'].shape[1]
 
@@ -498,13 +501,13 @@ class ModeClassifier():
         figsize = 6
         lw = 2.0
         fig,ax = plt.subplots(self.nm, figsize=(figsize, 4))
-        labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        labels = ['HVAC Mode']
         for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
             ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
             ax.plot(t1, 'c', linewidth=lw, label="True")
             ax.plot(t2, 'm--', linewidth=lw, label='Pred')
             ax.tick_params(labelbottom=False, labelsize=figsize)
-            ax.set_title("Class (Normalized)", fontsize=figsize)
             ax.set_xlim(0,1000)
         ax.tick_params(labelbottom=True, labelsize=figsize)
         ax.legend(fontsize=figsize)
@@ -513,98 +516,101 @@ class ModeClassifier():
         plt.close(fig)
 
         # Plot training and validation loss
-        # Should only run if the model was trained on this run instead of loaded from a file
-        if (self.callback.debugLevel >= DebugLevel.EPOCH_LOSS) and (len(self.callback.loss) > 0):
-            loss_df = pd.DataFrame(self.callback.loss)
-            loss_df = loss_df[['train_loss', 'dev_loss']]
-            loss_df['train_loss'] = loss_df['train_loss'].apply(lambda x: x.detach().item())
-            loss_df['dev_loss'] = loss_df['dev_loss'].apply(lambda x: x.detach().item())
-            loss_df.to_csv(self.saveDir+'/loss.csv', index=False)
-            fig = plt.figure()
-            plt.plot(loss_df)
-            plt.xlabel('Epoch')
-            plt.ylabel('Loss')
-            plt.legend(loss_df.keys())
-            plt.tight_layout()
-            fig.savefig(self.saveDir+'/loss', dpi=fig.dpi)
-            plt.close(fig)
+        self.PlotLoss()
 
-class ControllerSystem():
-    def __init__(self, nx, nu, nd, nd_obs, ny, y_idx, d_idx, manager, name, norm,
-                 thermalModel, classifier, device, debugLevel, saveDir=None):
+class ControllerSystem(NeuromancerModel):
+    '''
+    Building energy management system controller
+    Attributes:
+        nx: (int) number of states
+        nu: (int) number of control signals
+        nd: (int) number of disturbances
+        nd_obs: (int) number of observable disturbances
+        ni: (int) number of information inputs
+        ny: (int) number of controlled outputs
+        nref: (int) number of reference signals
+        y_idx: (list[int]) indices of observed states
+        d_idx: (list[int]) indices of observable disturbances
+        norm: (Normalizer) object used to normalize and denormalize data
+        weights: (dict) weights to be used for each objective and constraint
+        hsizes: (list[int]) size of hidden layers
+        n_samples: (int) number of samples to create from dataset
+        thermalModel: (Node) trained thermal model
+        classifier: (Node) trained classifier model
+        callback: (Callback_Controller) custom callback class
+        rng: (np.random) random number generator
+        system: (neuromancer.System) whole control system
+    '''
+    def __init__(self, nx:int, nu:int, nd:int, nd_obs:int, ni:int, ny:int, y_idx:int, d_idx:list[int], manager, name:str, norm,
+                 thermalModel:Node, classifier:Node, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
         '''
-        Constructor function
-        Inputs:
-            nx: (int) number of states
-            nu: (int) number of control signals
-            nd: (int) number of disturbances
-            nd_obs: (int) number of observable disturbances
-            ni: (int) number of information inputs
-            ny: (int) number of controlled outputs
-            y_idx: (list[int]) indices of observed states
-            d_idx: (list[int]) indices of observable disturbances
-            manager (RunManager) object that keeps track of various model parameters
-            name: (str) name of the model
-            norm: (Normalizer) object used to normalize and denormalize data for plotting purposes
-            thermalModel: (neuromancer.system or Node) trained building thermal model
-            device: (torch.device) device to run training on
-            debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
-            saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
+        Constructor
+
+        :param nx: (int) number of states
+        :param nu: (int) number of control signals
+        :param nd: (int) number of disturbances
+        :param nd_obs: (int) number of observable disturbances
+        :param ni: (int) number of information inputs
+        :param ny: (int) number of controlled outputs
+        :param y_idx: (list[int]) indices of observed states
+        :param d_idx: (list[int]) indices of observable disturbances
+        :param manager (RunManager) object that keeps track of various model parameters
+        :param name: (str) name of the model
+        :param norm: (Normalizer) object used to normalize and denormalize data for plotting purposes
+        :param thermalModel: (neuromancer.system or Node) trained building thermal model
+        :param device: (torch.device) device to run training on
+        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
+        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
         '''
+        super().__init__(manager, name, device, debugLevel, saveDir)
+
         self.nx = nx
         self.nu = nu
         self.nd = nd
         self.nd_obs = nd_obs
+        self.ni = ni
         self.ny = ny
         self.nref = ny
         self.y_idx = y_idx
         self.d_idx = d_idx
 
         self.norm = norm
-        self.manager = manager
 
         self.weights = manager.models[name]['weights']
         self.hsizes = manager.models[name]['hsizes']
-
-        train_params = manager.models[name]['train_params']
-        self.nsteps = train_params['nsteps']
-        self.n_samples = train_params['n_samples']
-        self.batch_size = train_params['batch_size']
-        self.max_epochs = train_params['max_epochs']
-        self.patience = train_params['patience']
-        self.warmup = train_params['warmup']
-        self.lr = train_params['lr']
+        self.n_samples = manager.models[name]['train_params']['n_samples']
 
         self.thermalModel = thermalModel
         self.classifier = classifier
-        self.device = device
-
-        if saveDir is None:
-            self.saveDir = name
-        else:
-            self.saveDir = saveDir
-
-        self.runName = manager.name
 
         self.callback = Callback_Controller(debugLevel, self.saveDir)
 
         self.rng = np.random.default_rng(seed=60)
 
         self.system = None
-        self.problem = None
-        self.loss = None
 
     def CreateModel(self):
         '''Defines control system'''
         net = blocks.MLP_bounds(
-        insize=self.ny + 2*self.nref + self.nd_obs + 1,
+        insize=self.ny + 2*self.nref + self.nd_obs + self.ni,
         outsize=self.nu,
         hsizes=self.hsizes,
         nonlin=nn.GELU,
         min=0,
         max=1)
 
-        policy = Node(net, ['y', 'ymin', 'ymax', 'd_obs', 'dr'], ['u_dec'], name='policy')
+        policy = Node(net, ['y', 'ymin', 'ymax', 'd_obs', 'cost', 'dr'], ['u_dec'], name='policy')
+
+        batNet = blocks.MLP_bounds(
+        insize=self.ni+1,
+        outsize=self.nu,
+        hsizes=self.hsizes,
+        nonlin=nn.GELU,
+        min=-9,
+        max=9)
+        batPolicy = Node(batNet, ['cost', 'dr', 'batRef'], ['u_bat'], name='batPolicy')
+
+        batModel = Node(BatteryModel(eff=0.95, capacity=10, nx=1, nu=1), ['stored', 'u_bat'], ['stored'], name='batModel')
 
         # Freeze thermal model
         for p in self.thermalModel.nodes[0].parameters():
@@ -619,7 +625,8 @@ class ControllerSystem():
         dist_obs = Node(dist_model, ['d'], ['d_obs'], name='dist_obs')
 
         # closed loop system model
-        self.system = System([dist_obs, policy, self.classifier, self.thermalModel.nodes[0], self.thermalModel.nodes[1]],
+        self.system = System([dist_obs, policy, self.classifier, self.thermalModel.nodes[0], self.thermalModel.nodes[1],
+                              batPolicy, batModel],
                         nsteps=self.nsteps,
                         name='cl_system')
         self.system.to(device=self.device)
@@ -633,26 +640,35 @@ class ControllerSystem():
         ymin = variable('ymin')
         ymax = variable('ymax')
         dr = variable('dr')         # Varies between -1 and 1
+        cost = variable('cost')
+        u_bat = variable('u_bat')
+        stored = variable('stored')
+        batRef = variable('batRef')
 
         # objectives
-        action_loss = u.minimize(weight=self.weights['action_loss'], name='action_loss')
-        # du_loss = self.weights['du_loss'] * (u[:,:-1,:] - u[:,1:,:] == torch.tensor(np.zeros((self.batch_size, self.nsteps-1, self.nu)), device=self.device)) # delta u minimization
-        # du_loss.name = 'du_loss'
-        dr_loss = self.weights['dr_loss'] * (((u) * dr) == torch.tensor(np.zeros((self.batch_size, self.nsteps, 1)), device=self.device))
+        u_tot = u + u_bat
+        action_loss = u_tot.minimize(weight=self.weights['action_loss'], name='action_loss')
+
+        dr_loss = self.weights['dr_loss'] * (((u_tot) * dr) == torch.tensor(np.zeros((self.batch_size, self.nsteps, 1)), device=self.device))
         dr_loss.name = 'dr_loss'
-        fuckme_loss = y.minimize(weight=1)
+        cost_loss = (cost * u_tot).minimize(weight=self.weights['cost_loss'], name='cost_loss')
 
         # thermal comfort constraints
         state_lower_bound_penalty = self.weights['x_min'] * (y > ymin)
         state_upper_bound_penalty = self.weights['x_max'] * (y < ymax)
 
+        bat_life_lower_bound_penalty = self.weights['bat_min'] * (stored > batRef)
+        bat_life_upper_bound_penalty = self.weights['bat_max'] * (stored < 8)
+
         # objectives and constraints names for nicer plot
         state_lower_bound_penalty.name = 'x_min'
         state_upper_bound_penalty.name = 'x_max'
+        bat_life_lower_bound_penalty.name = 'bat_life_min'
+        bat_life_upper_bound_penalty.name = 'bat_life_max'
 
         # list of constraints and objectives
-        objectives = [dr_loss]
-        constraints = [state_lower_bound_penalty, state_upper_bound_penalty]
+        objectives = [action_loss, dr_loss, cost_loss]
+        constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_life_upper_bound_penalty]
 
         # Problem construction
         nodes = [self.system]
@@ -661,28 +677,27 @@ class ControllerSystem():
         if self.callback.debugLevel > DebugLevel.NO:
             self.problem.show(self.manager.runPath+"MPC_optim.png")
 
-    def TrainModel(self, dataset, tempMin, tempMax, load, test=True):
+    def TrainModel(self, dataset, tempMin, tempMax, load):
         '''
         Trains control system
-        Inputs:
-            dataset: (dict) normalized dataset split into states (X), information inputs (I), and disturbances (D)
-            tempMin: (float)
-            tempMax: (float)
+
+        :param dataset: (dict) normalized dataset split into states (X), information inputs (I), and disturbances (D)
+        :param tempMin: (float)
+        :param tempMax: (float)
+        :param load: (bool) load previous run from file
         '''
-        if test:
-            xmin_range = torch.distributions.Uniform(tempMin, tempMax)
+        xmin_range = torch.distributions.Uniform(tempMin, tempMax)
 
-            trainLoader, devLoader = [
-                self.PrepareDataset(dataset, xmin_range, 
-                                name=name) for name in ("train", "dev")
-            ]
+        trainLoader, devLoader = [
+            self.PrepareDataset(dataset, xmin_range, 
+                            name=name) for name in ("train", "dev")
+        ]
 
-            for key, value in trainLoader.dataset.datadict.items():
-                print(key, value.shape)
+        # for key, value in trainLoader.dataset.datadict.items():
+        #     print(key, value.shape)
 
         if load:
-            self.problem.load_state_dict(torch.load(self.saveDir+'/best_model_state_dict.pth', weights_only=True))
-            self.problem.eval()
+            self.LoadModel()
             return
 
         logger = BasicLogger(args=None, savedir=self.saveDir, verbosity=1,
@@ -709,7 +724,7 @@ class ControllerSystem():
         
     def TestModel(self, dataset, tempMin, tempMax):
         '''Plots the testing of the controller system'''
-        nsteps_test = 2000
+        nsteps_test = 1440
         # nsteps_test = 60
 
         # generate reference
@@ -721,16 +736,25 @@ class ControllerSystem():
         start_idx = self.rng.integers(0, len(dataset['D'])-nsteps_test)
         torch_dist = torch.tensor(self.Get_D(dataset['D'], nsteps_test+1, start_idx),
                                   dtype=torch.float32, device=self.device).unsqueeze(0)
+        torch_price = torch.tensor(self.Get_D(dataset['I'], nsteps_test+1, start_idx),
+                                  dtype=torch.float32, device=self.device).unsqueeze(0)
         # initial data for closed loop sim
         x0 = torch.tensor(self.Get_X0(dataset['X']),
                           dtype=torch.float32, device=self.device).reshape(1,1,self.nx)
         dr = torch.tensor(psl.signals.step(nsteps_test+1, 1, min=0, max=1, randsteps=5, rng=self.rng), dtype=torch.float32).reshape(1, nsteps_test+1, 1)
+        dr = torch.tensor(np.zeros((1, nsteps_test+1, 1)), dtype=torch.float32)
+        stored0 = torch.tensor(self.rng.uniform(0,10,[1,1,1]), dtype=torch.float32, device=self.device)
+        batRef = torch.tensor(pd.read_csv('socSchedule.csv', header=None).to_numpy(), dtype=torch.float32, device=self.device).reshape(1, nsteps_test, 1) * 10
+
         data = {'xn': x0,
                 'y': x0[:,:,self.y_idx],
                 'ymin': ymin_val,
                 'ymax': ymax_val,
                 'd': torch_dist,
-                'dr': dr}
+                'cost': torch_price,
+                'dr': dr,
+                'stored': stored0,
+                'batRef': batRef}
         print('Input dataset')
         for key, value in data.items():
             print(key, value.shape)
@@ -770,9 +794,11 @@ class ControllerSystem():
         ax[2].plot(trajectories['d'].detach().cpu().reshape(nsteps_test+1, self.nd), linewidth=3)
         ax[2].set_ylabel('d', fontsize=26)
         # ax[2].set_xlabel('Time [mins]', fontsize=26)
-        ax[3].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3)
+        ax[3].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3, label='dr')
+        ax[3].plot(trajectories['cost'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3, label='cost')
         ax[3].set_ylabel('dr', fontsize=26)
         ax[3].set_xlabel('Time [mins]', fontsize=26)
+        ax[3].legend(fontsize=26)
         for i in range(numPlots):
             ax[i].grid(True)
             ax[i].tick_params(axis='x', labelsize=26)
@@ -782,6 +808,30 @@ class ControllerSystem():
         plt.figtext(0.01, 0.01, self.runName, fontsize=26)
         plt.tight_layout()
         plt.savefig(self.saveDir+'/controller_rollout', dpi=fig.dpi)
+        plt.close(fig)
+
+        numPlots = 3
+        fig, ax = plt.subplots(numPlots, figsize=(16,16))
+        ax[0].plot(trajectories['stored'].detach().cpu().reshape(nsteps_test+1, self.ny), linewidth=3)
+        ax[0].plot(trajectories['batRef'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[0].set_ylabel('stored', fontsize=26)
+        # ax[0].set(ylim=[10,30])
+        ax[1].plot(trajectories['u_bat'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[1].set_ylabel('u_bat', fontsize=26)
+        ax[2].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3, label='dr')
+        ax[2].plot(trajectories['cost'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3, label='cost')
+        ax[2].set_ylabel('dr', fontsize=26)
+        ax[2].set_xlabel('Time [mins]', fontsize=26)
+        ax[2].legend(fontsize=26)
+        for i in range(numPlots):
+            ax[i].grid(True)
+            ax[i].tick_params(axis='x', labelsize=26)
+            ax[i].tick_params(axis='y', labelsize=26)
+            ax[i].set_xlim(0, nsteps_test)
+            # ax[i].set(xlim=[750, 1500])
+        plt.figtext(0.01, 0.01, self.runName, fontsize=26)
+        plt.tight_layout()
+        plt.savefig(self.saveDir+'/bat_controller_rollout', dpi=fig.dpi)
         plt.close(fig)
 
         numPlots = 2
@@ -807,29 +857,15 @@ class ControllerSystem():
         plt.close(fig)
 
         # Plot training and validation loss
-        # Should only run if the model was trained on this run instead of loaded from a file
-        if (self.callback.debugLevel >= DebugLevel.EPOCH_LOSS) and (len(self.callback.loss) > 0):
-            loss_df = pd.DataFrame(self.callback.loss)
-            loss_df = loss_df[['train_loss', 'dev_loss']]
-            loss_df['train_loss'] = loss_df['train_loss'].apply(lambda x: x.detach().item())
-            loss_df['dev_loss'] = loss_df['dev_loss'].apply(lambda x: x.detach().item())
-            loss_df.to_csv(self.saveDir+'/loss.csv', index=False)
-            fig = plt.figure()
-            plt.plot(loss_df)
-            plt.xlabel('Epoch')
-            plt.ylabel('Loss')
-            plt.legend(loss_df.keys())
-            plt.tight_layout()
-            fig.savefig(self.saveDir+'/controller_loss', dpi=fig.dpi)
-            plt.close(fig)
+        self.PlotLoss()
 
     def PrepareDataset(self, dataset, xmin_range, name='train'):
         '''
         Prepare data for training and testing of controller model
-        Inputs:
-            dataset: (dict) normalized dataset split into states (X), information inputs (I), and disturbances (D)
-        Outputs:
-            (DataLoader) DataLoader object with batched dataset
+
+        :param dataset: (dict) normalized dataset split into states (X), information inputs (I), and disturbances (D)
+
+        :return: (DataLoader) DataLoader object with batched dataset
         '''
         # sampled references for training the policy
         batched_xmin = xmin_range.sample((self.n_samples, 1, self.nref)).repeat(1, self.nsteps+1, 1)
@@ -837,20 +873,28 @@ class ControllerSystem():
         batched_range = self.norm.normDelta(batched_range, keys=['y'])
         batched_xmax = batched_xmin + batched_range
 
-        batched_dr = torch.tensor(self.rng.integers(low=0, high=2, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps, 1)
+        bat_range = torch.distributions.Uniform(2, 8)
+        batched_batRef = bat_range.sample((self.n_samples, 1, self.nref)).repeat(1, self.nsteps+1, 1)
+
+        batched_dr = torch.tensor(self.rng.uniform(low=0, high=1, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps, 1)
         
         # sampled disturbance trajectories from simulation model
         temp_d = []
+        temp_i = []
         for _ in range(self.n_samples):
             start_idx = self.rng.integers(0, len(dataset['D'])-1-self.nsteps)
             temp_d.append(torch.tensor(self.Get_D(dataset['D'], self.nsteps, start_idx),
                                       dtype=torch.float32, device=self.device))
+            temp_i.append(torch.tensor(self.Get_D(dataset['I'], self.nsteps, start_idx),
+                                        dtype=torch.float32, device=self.device))
         batched_dist = torch.stack(temp_d)
+        batched_price = torch.stack(temp_i)
 
         # sampled initial conditions
         batched_x0 = torch.stack([torch.tensor(self.Get_X0(dataset['X']),
                                                dtype=torch.float32, device=self.device).unsqueeze(0)
                                                for _ in range(self.n_samples)])
+        batched_stored0 = torch.tensor(self.rng.uniform(0,1,[self.n_samples,1,1]), dtype=torch.float32, device=self.device)
 
         data = DictDataset(
             {"xn": batched_x0,
@@ -858,7 +902,10 @@ class ControllerSystem():
             "ymin": batched_xmin,
             "ymax": batched_xmax,
             "d": batched_dist,
-            'dr': batched_dr},
+            "cost": batched_price,
+            'dr': batched_dr,
+            "stored": batched_stored0,
+            "batRef": batched_batRef},
             name=name,
         )
         for key, value in data.datadict.items():
@@ -869,10 +916,10 @@ class ControllerSystem():
     def Get_X0(self, data):
         '''
         Randomly samples state data to create a series of initial states
-        Inputs:
-            dat: (ndarray/tensor) state data
-        Outputs:
-            list of initial states
+
+        :param data: (ndarray/tensor) state data
+
+        :return: (ndarray) array of initial states
         '''
         # brackets because there is only one state currently
         return np.array(self.rng.uniform(low=np.min(data, axis=0), high=np.max(data, axis=0)))
@@ -880,223 +927,115 @@ class ControllerSystem():
     def Get_D(self, data, nsim, start_idx):
         '''
         Samples a slice of disturbance data
-        Inputs:
-            data: (ndarray/tensor) disturbance data
-            nsim: (int) length of slice to sample
-            start_idx: (int) index to start slice at
-        Outputs:
-            Selected slice of disturbance data
+
+        :param data: (ndarray/tensor) disturbance data
+        :param nsim: (int) length of slice to sample
+        :param start_idx: (int) index to start slice at
+
+        :return: Selected slice of disturbance data
         '''
         return data[start_idx:start_idx+nsim, :]
     
-class my_round_func(torch.autograd.function.InplaceFunction):
-    @staticmethod
-    def forward(ctx, input):
-        ctx.input = input
-        return torch.round(input)
+class BatteryModel(nn.Module):
+    def __init__(self, eff, capacity, nx, nu):
+        super().__init__()
+        self.nx = nx
+        self.nu = nu
+        self.in_features = nx+nu
+        self.out_features = nx
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        grad_input = grad_output.clone()
-        return grad_input
+        self.eff = eff
+        self.capacity = capacity
+
+    def forward(self, x, u):
+        assert len(x.shape) == 2
+        assert len(u.shape) == 2
+
+        x = x + self.eff * u
+        # x = torch.clamp(x, 0, self.capacity)
+
+        return x
     
-class Normalizer():
-    '''Class that handles the normalizing and de-normalizing of a variety of data structures'''
-    def __init__(self):
-        self.dataInfo = {'leave': {'max': 1,
-                                   'min': 0,
-                                   'mean': 0,
-                                   'std': 1}}
+class BatteryCorrection(nn.Module):
+    def __init__(self, capacity):
+        super().__init__()
+        self.capacity = capacity
 
-    def add_data(self, data, keys=None):
+    def forward(self, x, u):
+        assert len(x.shape) == 2
+        assert len(u.shape) == 2
+
+        zero_tensor = torch.zeros(x.size())
+        u = torch.where(x + u > self.capacity, u, zero_tensor)
+        u = torch.where(x + u < 0, u, zero_tensor) 
+
+class iMODE(blocks.Block):
+    def __init__(self, insize, outsize, bias=True, linear_map=slim.Linear, nonlin=nn.Softplus, hsizes=[64], linargs=dict()):
         '''
-        Adds an entry to dataInfo to keep track of input data's descriptors
-        Inputs:
-            data: (dict, DictDataset, DataFrame, nparray) data to describe
-            keys: (list[str]) names to use when storing data descriptors, defaults to None
-        Outputs:
-            (None)
+        Constructor
+        Define model topology
         '''
-        # Numpy array or tensor where data descriptors (calculated along axis 0) should be stored under a single key
-        # Assumes only one key is provided
-        if isinstance(data, np.ndarray) or isinstance(data, torch.Tensor):
-            if keys is None:
-                raise ValueError('List of keys is required for numpy arrays and torch tensors')
-            names = enumerate(keys)
+        super().__init__()
+        self.in_features, self.out_features = insize, outsize
+        self.nhidden = len(hsizes)
+        sizes = [insize] + hsizes + [outsize]
+        self.nonlin = nn.ModuleList(
+            [nonlin() for k in range(self.nhidden)] + [nn.Identity()]
+        )
+        self.linear = nn.ModuleList(
+            [linear_map(sizes[k], sizes[k+1], baias=bias, **linargs) for k in range(self.nhidden + 1)]
+        )
 
-            self.dataInfo[keys[0]] = {'max': np.max(data, axis=0),
-                                    'min': np.min(data, axis=0),
-                                    'mean': np.mean(data, axis=0),
-                                    'std': np.std(data, axis=0)}
-            return
-        # For dataframe and series, use column names if user keys are not provided
-        elif isinstance(data, pd.DataFrame) or isinstance(data, pd.Series):
-            names = data.columns.tolist()
-            if keys is None:
-                keys = names
-        # For dict and DictDataset, use keys if user keys are not provided
-        elif isinstance(data, dict) or isinstance(data, DictDataset):
-            names = list(data.keys())
-            if keys is None:
-                names = keys
-        else:
-            raise TypeError('Data structure used is not supported')
-        
-        for key, name in zip(keys,names):
-                self.dataInfo[key] = {'max': np.max(data[name], axis=0),
-                                    'min': np.min(data[name], axis=0),
-                                    'mean': np.mean(data[name], axis=0),
-                                    'std': np.std(data[name], axis=0)}
-        
-        if self.dataInfo[key]['max'] == self.dataInfo[key]['min']:
-            self.dataInfo[key] = self.dataInfo['leave']
-            
-        return
-
-    def norm(self, data, keys=None):
+    def block_eval(self, x):
         '''
-        Normalizes a provided dataset based on previously added descriptors
-        Inputs:
-            data: (dict, DictDataset, DataFrame, nparray) data to normalize
-            keys: (list[str]) keys to use when normalizing, defaults to None
-        Outputs:
-            Normalized data
+        Apply inputs through model layers
         '''
-        # numpy arrays and tensors are normalized based on a multi-dimensonal descriptor stored under one key
-        # Assumes only one key is provided
-        if isinstance(data, (np.ndarray, torch.Tensor)):
-            if keys is None:
-                raise ValueError('List of keys is required for numpy arrays and torch tensors')
-            stats = self.dataInfo[keys[0]]
-            norm_data = (data - stats['min']) / (stats['max'] - stats['min'])
-            return norm_data
-        # For dataframe, use column names if user keys are not provided
-        elif isinstance(data, pd.DataFrame):
-            names = data.columns.tolist()
-            if keys is None:
-                keys = data.columns.tolist()
-        # For dict and DictDataset, use keys if user keys are not provided
-        elif isinstance(data, dict) or isinstance(data, DictDataset):
-            names = list(data.keys())
-            if keys is None:
-                keys = list(data.keys())
-        else:
-            # Special case for a single, scalar value
-            try:
-                stats = self.dataInfo[keys[0]]
-                norm_data = (data - stats['min']) / (stats['max'] - stats['min'])
-                return norm_data
-            except: 
-                raise TypeError('Data structure used is not supported')
-
-        # Min max normalization
-        norm_data = data.copy()
-        for key,name in zip(keys,names):
-            stats = self.dataInfo[key]
-            if isinstance(norm_data[name], torch.Tensor):
-                dev = norm_data[name].get_device()
-                if dev == -1:
-                    device = torch.device("cpu")
-                else:
-                    device = torch.device("cuda:"+str(dev))
-                norm_data[name] = (norm_data[name] - torch.tensor(stats['min'], device=device)) / torch.tensor((stats['max'] - stats['min']), device=device)
-            else:
-                norm_data[name] = (norm_data[name] - stats['min']) / (stats['max'] - stats['min'])
-
-        return norm_data
+        first = True
+        for lin, nlin in zip(self.linear, self.nonlin):
+            if first:
+                x = nlin(lin(x))
+                first = False
+                continue
+            xin = x
+            x = nlin(lin(x))
+            x = torch.cat([xin,x],1)
+        return x
     
-    def normDelta(self, data, keys):
-        '''
-        Special case normalizer for delta values
-        Inputs:
-            data: (ndarray or scalar value) delta value(s) to normalize
-            keys: list[str] list of length 1 with key to use
-        Outputs:
-            normalized data
-        '''
-        stats = self.dataInfo[keys[0]]
-        norm_data = data / (stats['max'] - stats['min'])
-        return norm_data
-
-    def denorm(self, data, keys=None):
-        '''
-        De-normalize a provided dataset based on previously added descriptors
-        Inputs:
-            data: (dict, DictDataset, DataFrame, nparray) data to de-normalize
-            keys: (list[str]) keys to use for de-normalizing, defaults to None
-        Outputs:
-            De-normalized data
-        '''
-        # numpy arrays and tensors are de-normalized based on a multi-dimensonal descriptor stored under one key
-        # Assumes only one key is provided
-        if isinstance(data, (np.ndarray, torch.Tensor)):
-            if keys is None:
-                raise ValueError('List of keys is required for numpy arrays and torch tensors')
-            stats = self.dataInfo[keys[0]]
-            denorm_data = data * (stats['max'] - stats['min']) + stats['min']
-            return denorm_data
-        # For dataframe, use column names if user keys are not provided
-        if isinstance(data, pd.DataFrame):
-            names = data.columns.tolist()
-            if keys is None:
-                keys = data.columns.tolist()
-        # For dict and DictDataset, use keys if user keys are not provided
-        elif isinstance(data, dict) or isinstance(data, DictDataset):
-            names = list(data.keys())
-            if keys is None:
-                keys = list(data.keys())
-        else:
-            # Special case for a single, scalar value
-            try:
-                stats = self.dataInfo[keys[0]]
-                denorm_data = data * (stats['max'] - stats['min']) + stats['min']
-                return denorm_data
-            except: 
-                raise TypeError('Data structure used is not supported')
-
-        denorm_data = data.copy()
-
-        for key,name in zip(keys,names):
-            stats = self.dataInfo[key]
-            if isinstance(denorm_data[name], torch.Tensor):
-                dev = denorm_data[name].get_device()
-                if dev == -1:
-                    device = torch.device("cpu")
-                else:
-                    device = torch.device("cuda:"+str(dev))
-                denorm_data[name] = denorm_data[name] * torch.tensor((stats['max'] - stats['min']), device=device) + torch.tensor(stats['min'], device=device)
-            else:
-                denorm_data[name] = denorm_data[name] * (stats['max'] - stats['min']) + stats['min']
-
-        return denorm_data
-    
-    def save(self, filePath=''):
-        '''
-        Saves the dataInfo dict as a json file
-        '''
-        dataInfoCopy = copy.deepcopy(self.dataInfo)
-        for key,value in dataInfoCopy.items():
-            if type(value['max']) == np.ndarray:
-                for k,v in value.items():
-                    value[k] = v.tolist()
-        Path(filePath).mkdir(parents=True, exist_ok=True)
-        with open(filePath+'norm_dataInfo.json', 'w') as fp:
-            json.dump(dataInfoCopy, fp)
-
-    def load(self, filePath=''):
-        '''
-        Loads a previously saved dataInfo dict from a json file
-        '''
-        with open(filePath+'norm_dataInfo.json') as fp:
-            dataInfoCopy = json.load(fp)
-        for key, value in dataInfoCopy.items():
-            if type(value['max']) == list:
-                for k,v in value.items():
-                    value[k] = np.array(v)
-        self.dataInfo = dataInfoCopy
 
 # Custom debug and callback code
+class Callback_Basic(Callback):
+    '''
+    Basic callback class that plots loss over training epochs
+
+    Attributes:
+        debugLevel: (DebugLevel or int) level of debug used in training
+        loss: (list) various loss values over training epochs
+    '''
+    def __init__(self, debugLevel):
+        '''
+        Constructor
+
+        :param debugLevel: (DebugLevel or int) level of debug used in training
+        '''
+        self.debugLevel = debugLevel
+
+        # Monitoring loss by epoch
+        self.loss = []
+
+    def end_eval(self, trainer, output):
+        if self.debugLevel < DebugLevel.EPOCH_LOSS:
+            return
+        self.loss.append(output)
+
 class DebugLevel(Enum):
+    '''
+    Enum used for setting debug level of training
+
+    0: No debug files are created
+    1: Diagrams of the models and optimizations are created
+    2: Loss over training epochs is plotted
+    3: Values over training epochs is plotted
+    '''
     NO = 0
     MODEL_DIAGRAMS = 1
     EPOCH_LOSS = 2
@@ -1144,20 +1083,10 @@ class DebugLevel(Enum):
             return self.value != other
         return NotImplemented
 
-
 class Callback_NODE(Callback):
-    def __init__(self, debugLevel):
-        self.debugLevel = debugLevel
-
-        # Monitoring loss by epoch
-        self.loss = []
-
-    def end_eval(self, trainer, output):
-        if self.debugLevel < DebugLevel.EPOCH_LOSS:
-            return
-        self.loss.append(output)
-
-class Callback_Controller(Callback):
+    '''
+    Custom callback class to monitor NODE training
+    '''
     def __init__(self, debugLevel, savePath):
         self.debugLevel = debugLevel
 
@@ -1169,34 +1098,27 @@ class Callback_Controller(Callback):
         self.ResetTrainValues()
 
     def ResetTrainValues(self):
-        self.trainValues = {'train_u': [], 'train_y': [], 'train_ymin': [], 'train_ymax': []}
+        self.trainValues = {'train_u': [], 'train_y': [], 'train_yhat': []}
 
     def end_batch(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_VALUES:
             return
-        # print(output.keys())
-        # print('train_xn', output['train_xn'].shape)
-        # print('train_y', output['train_y'].shape)
-        # print('train_ymin', output['train_ymin'].shape)
-        # input('paused')
+
         self.trainValues['train_u'].append(output['train_u'].detach().cpu().flatten().numpy())
-        self.trainValues['train_y'].append(output['train_y'][:,:-1,:].detach().cpu().flatten().numpy())
-        self.trainValues['train_ymin'].append(output['train_ymin'][:,:-1,:].detach().cpu().flatten().numpy())
-        self.trainValues['train_ymax'].append(output['train_ymax'][:,:-1,:].detach().cpu().flatten().numpy())
+        self.trainValues['train_y'].append(output['train_y'].detach().cpu().flatten().numpy())
+        self.trainValues['train_yhat'].append(output['train_x'].detach().cpu().flatten().numpy())
 
     def begin_epoch(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_VALUES:
             return
-        train_u = np.array(self.trainValues['train_u']).flatten()
-        train_y = np.array(self.trainValues['train_y']).flatten()
-        train_ymin = np.array(self.trainValues['train_ymin']).flatten()
-        train_ymax = np.array(self.trainValues['train_ymax']).flatten()
+        train_u = np.array(self.trainValues['train_u'][:-1]).flatten()
+        train_y = np.array(self.trainValues['train_y'][:-1]).flatten()
+        train_yhat = np.array(self.trainValues['train_yhat'][:-1]).flatten()
         fig, ax = plt.subplots(2, figsize=(10,8))
         ax[0].plot(train_u)
         ax[0].set(ylim=[0,1.1], title='u', xlim=[0,2000])
         ax[1].plot(train_y)
-        ax[1].plot(train_ymin, '--', c='k', zorder=-1)
-        ax[1].plot(train_ymax, '--', c='k', zorder=-1)
+        ax[1].plot(train_yhat)
         ax[1].set(ylim=[0,1.1], title='y', xlim=[0,2000])
         plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
         plt.tight_layout()
@@ -1216,4 +1138,364 @@ class Callback_Controller(Callback):
         ims = [imageio.v3.imread(f"{self.savePath}/debug/epoch{i}.png") for i in range(len(os.listdir(self.savePath+'/debug/')))]
         imageio.mimwrite(self.savePath+'/train.gif', ims, fps=10)
         shutil.rmtree(self.savePath+'/debug/')
+
+class Callback_Controller(Callback):
+    '''
+    Custom callback class to monitor controller training
+    '''
+    def __init__(self, debugLevel, savePath):
+        self.debugLevel = debugLevel
+
+        # Monitoring loss by epoch
+        self.loss = []
+
+        # Monitoring values by epoch
+        self.savePath = savePath
+        self.ResetTrainValues()
+
+    def ResetTrainValues(self):
+        self.trainValues = {'train_u': [], 'train_y': [], 'train_ymin': [], 'train_ymax': [], 'train_ubat': [], 'train_stored': []}
+
+    def end_batch(self, trainer, output):
+        if self.debugLevel < DebugLevel.EPOCH_VALUES:
+            return
+        self.trainValues['train_u'].append(output['train_u'].detach().cpu().flatten().numpy())
+        self.trainValues['train_y'].append(output['train_y'][:,:-1,:].detach().cpu().flatten().numpy())
+        self.trainValues['train_ymin'].append(output['train_ymin'][:,:-1,:].detach().cpu().flatten().numpy())
+        self.trainValues['train_ymax'].append(output['train_ymax'][:,:-1,:].detach().cpu().flatten().numpy())
+        self.trainValues['train_ubat'].append(output['train_u_bat'][:,:,:].detach().cpu().flatten().numpy())
+        self.trainValues['train_stored'].append(output['train_stored'][:,:-1,:].detach().cpu().flatten().numpy())
+
+    def begin_epoch(self, trainer, output):
+        if self.debugLevel < DebugLevel.EPOCH_VALUES:
+            return
+        train_u = np.array(self.trainValues['train_u']).flatten()
+        train_y = np.array(self.trainValues['train_y']).flatten()
+        train_ymin = np.array(self.trainValues['train_ymin']).flatten()
+        train_ymax = np.array(self.trainValues['train_ymax']).flatten()
+        fig, ax = plt.subplots(2, figsize=(10,8))
+        ax[0].plot(train_u)
+        ax[0].set(ylim=[0,1.1], title='u', xlim=[0,2000])
+        ax[1].plot(train_y)
+        ax[1].plot(train_ymin, '--', c='k', zorder=-1)
+        ax[1].plot(train_ymax, '--', c='k', zorder=-1)
+        ax[1].set(ylim=[0,1.1], title='y', xlim=[0,2000])
+        plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
+        plt.tight_layout()
+        Path(f'{self.savePath}/debug/HVAC').mkdir(exist_ok=True, parents=True)
+        fig.savefig(f"{self.savePath}/debug/HVAC/epoch{output['train_epoch']}")
+        plt.close(fig)
+
+        train_ubat = np.array(self.trainValues['train_ubat']).flatten()
+        train_stored = np.array(self.trainValues['train_stored']).flatten()
+        fig, ax = plt.subplots(2, figsize=(10,8))
+        ax[0].plot(train_ubat)
+        ax[0].set(title='u', xlim=[0,2000])
+        ax[1].plot(train_stored)
+        ax[1].set(title='y', xlim=[0,2000])
+        plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
+        plt.tight_layout()
+        Path(f'{self.savePath}/debug/Battery').mkdir(exist_ok=True, parents=True)
+        fig.savefig(f"{self.savePath}/debug/Battery/epoch{output['train_epoch']}")
+        plt.close(fig)
+
+        self.ResetTrainValues()
+
+    def end_eval(self, trainer, output):
+        if self.debugLevel < DebugLevel.EPOCH_LOSS:
+            return
+        self.loss.append(output)
+
+    def end_train(self, trainer, output):
+        if self.debugLevel < DebugLevel.EPOCH_LOSS:
+            return
+        ims = [imageio.v3.imread(f"{self.savePath}/debug/HVAC/epoch{i}.png") for i in range(len(os.listdir(self.savePath+'/debug/HVAC/')))]
+        imageio.mimwrite(self.savePath+'/HVAC_train.gif', ims, fps=10)
+        ims = [imageio.v3.imread(f"{self.savePath}/debug/Battery/epoch{i}.png") for i in range(len(os.listdir(self.savePath+'/debug/Battery/')))]
+        imageio.mimwrite(self.savePath+'/battery_train.gif', ims, fps=10)
+        shutil.rmtree(self.savePath+'/debug/')
+
+class Normalizer():
+    '''
+    Class that handles the normalizing and de-normalizing of a variety of data structures
+    
+    Attributes:
+        dataInfo: (dict{dict}) stored the values needed for norm and de-norm processes for data keys
+    '''
+    def __init__(self):
+        self.dataInfo = {'leave': {'max': 1,
+                                   'min': 0,
+                                   'mean': 0,
+                                   'std': 1}}
+
+    def add_data(self, data, keys: typing.Optional[typing.Iterable[str]] = None):
+        '''
+        Adds an entry to dataInfo to keep track of input data's descriptors
+
+        :param data: (dict, DictDataset, DataFrame, nparray) data to describe
+        :param keys: (list[str]) names to use when storing data descriptors, defaults to None
+        '''
+        # Numpy array or tensor where data descriptors (calculated along axis 0) should be stored under a single key
+        # Assumes only one key is provided
+        if isinstance(data, np.ndarray) or isinstance(data, torch.Tensor):
+            if keys is None:
+                raise ValueError('List of keys is required for numpy arrays and torch tensors')
+            names = enumerate(keys)
+
+            self.dataInfo[keys[0]] = {'max': np.max(data, axis=0),
+                                    'min': np.min(data, axis=0),
+                                    'mean': np.mean(data, axis=0),
+                                    'std': np.std(data, axis=0)}
+            return
+        # For dataframe and series, use column names if user keys are not provided
+        elif isinstance(data, pd.DataFrame) or isinstance(data, pd.Series):
+            names = data.columns.tolist()
+            if keys is None:
+                keys = names
+        # For dict and DictDataset, use keys if user keys are not provided
+        elif isinstance(data, dict) or isinstance(data, DictDataset):
+            names = list(data.keys())
+            if keys is None:
+                names = keys
+        else:
+            raise TypeError('Data structure used is not supported')
+        
+        for key, name in zip(keys,names):
+                self.dataInfo[key] = {'max': np.max(data[name], axis=0),
+                                    'min': np.min(data[name], axis=0),
+                                    'mean': np.mean(data[name], axis=0),
+                                    'std': np.std(data[name], axis=0)}
+        
+        if self.dataInfo[key]['max'] == self.dataInfo[key]['min']:
+            self.dataInfo[key] = self.dataInfo['leave']
+            
+        return
+
+    def norm(self, data, keys: typing.Optional[typing.Iterable[str]] = None):
+        '''
+        Normalizes a provided dataset based on previously added descriptors
+
+        :param data: (dict, DictDataset, DataFrame, nparray) data to normalize
+        :param keys: (list[str]) keys to use when normalizing, defaults to None
+        :return: Normalized data with data structure matching input
+        '''
+        # numpy arrays and tensors are normalized based on a multi-dimensonal descriptor stored under one key
+        # Assumes only one key is provided
+        if isinstance(data, (np.ndarray, torch.Tensor)):
+            if keys is None:
+                raise ValueError('List of keys is required for numpy arrays and torch tensors')
+            stats = self.dataInfo[keys[0]]
+            norm_data = (data - stats['min']) / (stats['max'] - stats['min'])
+            return norm_data
+        # For dataframe, use column names if user keys are not provided
+        elif isinstance(data, pd.DataFrame):
+            names = data.columns.tolist()
+            if keys is None:
+                keys = data.columns.tolist()
+        # For dict and DictDataset, use keys if user keys are not provided
+        elif isinstance(data, dict) or isinstance(data, DictDataset):
+            names = list(data.keys())
+            if keys is None:
+                keys = list(data.keys())
+        else:
+            # Special case for a single, scalar value
+            try:
+                stats = self.dataInfo[keys[0]]
+                norm_data = (data - stats['min']) / (stats['max'] - stats['min'])
+                return norm_data
+            except: 
+                raise TypeError('Data structure used is not supported')
+
+        # Min max normalization
+        norm_data = data.copy()
+        for key,name in zip(keys,names):
+            stats = self.dataInfo[key]
+            if isinstance(norm_data[name], torch.Tensor):
+                dev = norm_data[name].get_device()
+                if dev == -1:
+                    device = torch.device("cpu")
+                else:
+                    device = torch.device("cuda:"+str(dev))
+                norm_data[name] = (norm_data[name] - torch.tensor(stats['min'], device=device)) / torch.tensor((stats['max'] - stats['min']), device=device)
+            else:
+                norm_data[name] = (norm_data[name] - stats['min']) / (stats['max'] - stats['min'])
+
+        return norm_data
+    
+    def normDelta(self, data, keys: typing.Iterable[str]):
+        '''
+        Special case normalizer for delta values
+        
+        :param data: (ndarray or scalar value) delta value(s) to normalize
+        :param keys: list[str] list of length 1 with key to use
+
+        :return: normalized data matching data structure of input
+        '''
+        stats = self.dataInfo[keys[0]]
+        norm_data = data / (stats['max'] - stats['min'])
+        return norm_data
+
+    def denorm(self, data, keys: typing.Optional[typing.Iterable[str]] = None):
+        '''
+        De-normalize a provided dataset based on previously added descriptors
+
+        :param data: (dict, DictDataset, DataFrame, nparray) data to de-normalize
+        :param keys: (list[str]) keys to use for de-normalizing, defaults to None
+
+        :return: De-normalized data matching data structure of input
+        '''
+        # numpy arrays and tensors are de-normalized based on a multi-dimensonal descriptor stored under one key
+        # Assumes only one key is provided
+        if isinstance(data, (np.ndarray, torch.Tensor)):
+            if keys is None:
+                raise ValueError('List of keys is required for numpy arrays and torch tensors')
+            stats = self.dataInfo[keys[0]]
+            denorm_data = data * (stats['max'] - stats['min']) + stats['min']
+            return denorm_data
+        # For dataframe, use column names if user keys are not provided
+        if isinstance(data, pd.DataFrame):
+            names = data.columns.tolist()
+            if keys is None:
+                keys = data.columns.tolist()
+        # For dict and DictDataset, use keys if user keys are not provided
+        elif isinstance(data, dict) or isinstance(data, DictDataset):
+            names = list(data.keys())
+            if keys is None:
+                keys = list(data.keys())
+        else:
+            # Special case for a single, scalar value
+            try:
+                stats = self.dataInfo[keys[0]]
+                denorm_data = data * (stats['max'] - stats['min']) + stats['min']
+                return denorm_data
+            except: 
+                raise TypeError('Data structure used is not supported')
+
+        denorm_data = data.copy()
+
+        for key,name in zip(keys,names):
+            stats = self.dataInfo[key]
+            if isinstance(denorm_data[name], torch.Tensor):
+                dev = denorm_data[name].get_device()
+                if dev == -1:
+                    device = torch.device("cpu")
+                else:
+                    device = torch.device("cuda:"+str(dev))
+                denorm_data[name] = denorm_data[name] * torch.tensor((stats['max'] - stats['min']), device=device) + torch.tensor(stats['min'], device=device)
+            else:
+                denorm_data[name] = denorm_data[name] * (stats['max'] - stats['min']) + stats['min']
+
+        return denorm_data
+    
+    def save(self, filePath=''):
+        '''
+        Saves the dataInfo dict as a json file
+
+        :param filePath: (str) path to the directory the normalizer info should be saved in
+        '''
+        dataInfoCopy = copy.deepcopy(self.dataInfo)
+        for key,value in dataInfoCopy.items():
+            if type(value['max']) == np.ndarray:
+                for k,v in value.items():
+                    value[k] = v.tolist()
+        Path(filePath).mkdir(parents=True, exist_ok=True)
+        with open(filePath+'norm_dataInfo.json', 'w') as fp:
+            json.dump(dataInfoCopy, fp)
+
+    def load(self, filePath=''):
+        '''
+        Loads a previously saved dataInfo dict from a json file
+
+        :param filePath: (str) path to the directory containing previously saved normalizer info
+        '''
+        with open(filePath+'norm_dataInfo.json') as fp:
+            dataInfoCopy = json.load(fp)
+        for key, value in dataInfoCopy.items():
+            if type(value['max']) == list:
+                for k,v in value.items():
+                    value[k] = np.array(v)
+        self.dataInfo = dataInfoCopy
+
+def TOUPricing(date, timeSteps=96):
+    """
+    Gets the time of use pricing depending on the date
+    Parameters:
+        date: datetime of the desired day
+        timeSteps: int of the number of timesteps in a single day (96 for 15 min intervals)
+    Returns:
+        list of ints of the hourly cost of energy in cents/kWh
+    """
+    # Prices in cents/kWh
+    # Summer: May 1st to September 30th
+    summer = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 19, 19, 28, 28, 28, 28, 10, 10, 10, 10, 10]
+    
+    # Winter: October 1st to April 30th
+    winter = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 14, 14, 17, 17, 17, 17, 10, 10, 10, 10, 10]
+    
+    limit1 = dt.datetime(date.year, 5, 1)
+    limit2 = dt.datetime(date.year, 10, 1)
+    
+    if (date >= limit1) & (date < limit2):
+        price = summer
+    else:
+        price = winter
+
+    # tempList = []
+    # for item in price:
+    #     for i in range(0,timeSteps//24):
+    #         tempList.append(item)
+    # return tempList
+
+    return price[date.hour]
+
+class DebugLevel(Enum):
+    '''
+    Enum used for setting debug level of training
+    '''
+    NO = 0
+    MODEL_DIAGRAMS = 1
+    EPOCH_LOSS = 2
+    EPOCH_VALUES = 3
+
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        if isinstance(other, numbers.Number):
+            return self.value < other
+        return NotImplemented
+    
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value <= other.value
+        if isinstance(other, numbers.Number):
+            return self.value <= other
+        return NotImplemented
+
+    def __gt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value > other.value
+        if isinstance(other, numbers.Number):
+            return self.value > other
+        return NotImplemented
+    
+    def __ge__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value >= other.value
+        if isinstance(other, numbers.Number):
+            return self.value >= other
+        return NotImplemented
+
+    def __eq__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value == other.value
+        if isinstance(other, numbers.Number):
+            return self.value == other
+        return NotImplemented
+    
+    def __ne__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value != other.value
+        if isinstance(other, numbers.Number):
+            return self.value != other
+        return NotImplemented
         

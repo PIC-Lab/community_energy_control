@@ -2,8 +2,9 @@ import pandas as pd
 import numpy as np
 import os
 
-from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, Normalizer, ModeClassifier
+from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, ModeClassifier
 from communityController.buildingController.thermal_node_model.runManager import RunManager
+from communityController.buildingController.thermal_node_model.neuro_util import Normalizer
 
 import torch
 
@@ -75,12 +76,13 @@ class BuildingController:
         ymax = self.setpointSchedule[:,currentMinutes:currentMinutes+self.nsteps,:] + self.setpointInfo['deadband']
         pos = self.weather.index.get_loc(currentTime)
         d = self.weather['Site Outdoor Air Temperature'].iloc[pos:pos+self.nsteps].to_numpy()[np.newaxis,:,np.newaxis]
+        dr = coordinateSignals[np.newaxis,:,np.newaxis]
         self.horizonData = {'xn': torch.tensor(self.stateData, dtype=torch.float32),
                             'y': torch.tensor(np.array([y])[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'ymin': torch.tensor(ymin, dtype=torch.float32),
                             'ymax': torch.tensor(ymax, dtype=torch.float32),
                             'd': torch.tensor(d, dtype=torch.float32),
-                            'dr': torch.tensor(np.zeros((1,self.nsteps,1)), dtype=torch.float32)}
+                            'dr': torch.tensor(dr, dtype=torch.float32)}
 
     def PushControlSignals(self):
         """
@@ -163,6 +165,7 @@ class BuildingController:
         device = torch.device("cpu")
 
         run = 'latestRun'
+        run = 'alf_AllBuildings_1stPass'
 
         # Path relative to the directory the sim is being run in. Needs to be fixed
         filePath = os.path.join(self.dirName, 'thermal_node_model')
