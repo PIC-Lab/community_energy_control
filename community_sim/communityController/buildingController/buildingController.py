@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
 import os
+import datetime as dt
 
-from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, ModeClassifier
+from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, ModeClassifier, Normalizer
 from communityController.buildingController.thermal_node_model.runManager import RunManager
-from communityController.buildingController.thermal_node_model.neuro_util import Normalizer
 
 import torch
 
@@ -29,7 +29,7 @@ class BuildingController:
             testCase: (str) name of test case being run, defaults to MPC
         """
         self.actuatorValues = {'heatingSetpoint': 0, 'coolingSetpoint': 0, 'battery': 3.8}
-        self.sensorValues = {'indoorAirTemp': 0}
+        self.sensorValues = {'indoorAirTemp': 0, 'batterySOC': 0.5}
         self.buildingID = id
         self.devices = devices
 
@@ -52,6 +52,7 @@ class BuildingController:
                                    , usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
         self.weather.set_index(pd.to_datetime(self.weather['Time'], format="%Y-%m-%d %H:%M:%S"), inplace=True)
         self.weather.drop('Time', axis=1, inplace=True)
+        self.socSchedule = pd.read_csv(os.path.join(self.dirName, 'thermal_node_model/socSchedule.csv')).to_numpy()
 
         # Run additional setup functions
         self.LoadMPC()
@@ -82,7 +83,12 @@ class BuildingController:
                             'ymin': torch.tensor(ymin, dtype=torch.float32),
                             'ymax': torch.tensor(ymax, dtype=torch.float32),
                             'd': torch.tensor(d, dtype=torch.float32),
-                            'dr': torch.tensor(dr, dtype=torch.float32)}
+                            'dr': torch.tensor(dr, dtype=torch.float32),
+                            'cost': torch.tensor(BuildingController.TOUPricing(currentTime, self.nsteps)[np.newaxis,:,np.newaxis], dtype=torch.float32),
+                            'stored': torch.tensor(np.array([self.sensorValues['batterySOC']])[np.newaxis,:,np.newaxis], dtype=torch.float32),
+                            'batRef': torch.tensor(self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')[np.newaxis,:], dtype=torch.float32)}
+        for key, value in self.horizonData.items():
+            print(key, value.shape)
 
     def PushControlSignals(self):
         """
@@ -119,6 +125,8 @@ class BuildingController:
 
         # Run control
         trajectories = self.cl_system(self.horizonData)
+
+        self.actuatorValues['battery'] = trajectories['u_bat'][0,0,0].detach().item()
 
         control = trajectories['u'][0,0,0].detach()
 
@@ -165,7 +173,8 @@ class BuildingController:
         device = torch.device("cpu")
 
         run = 'latestRun'
-        run = 'alf_AllBuildings_1stPass'
+        run = 'bat_AB_test_1'
+        # run = 'alf_AllBuildings_1stPass'
 
         # Path relative to the directory the sim is being run in. Needs to be fixed
         filePath = os.path.join(self.dirName, 'thermal_node_model')
@@ -223,6 +232,7 @@ class BuildingController:
                                          nu=initParams['nu'],
                                          nd=initParams['nd'],
                                          nd_obs=initParams['nd_obs'],
+                                         ni=2,
                                          ny=initParams['ny'],
                                          y_idx=initParams['y_idx'],
                                          d_idx=initParams['d_idx'],
@@ -240,3 +250,39 @@ class BuildingController:
 
         self.y_idx = initParams['y_idx']
         self.cl_system = controlSystem.system
+
+    @staticmethod
+    def TOUPricing(date, nsteps):
+        """
+        Gets the time of use pricing depending on the date
+        Parameters:
+            date: datetime of the desired day
+            timeSteps: int of the number of timesteps in a single day (96 for 15 min intervals)
+        Returns:
+            list of ints of the hourly cost of energy in cents/kWh
+        """
+        # Prices in cents/kWh
+        # Summer: May 1st to September 30th
+        summer = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 19, 19, 28, 28, 28, 28, 10, 10, 10, 10, 10]
+        
+        # Winter: October 1st to April 30th
+        winter = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 14, 14, 17, 17, 17, 17, 10, 10, 10, 10, 10]
+        
+        limit1 = dt.datetime(date.year, 5, 1)
+        limit2 = dt.datetime(date.year, 10, 1)
+        
+        if (date >= limit1) & (date < limit2):
+            price = summer
+        else:
+            price = winter
+
+        tempList = []
+        for i in range(0,nsteps):
+            if date.minute + i >= 60:
+                if date.hour >= 23:
+                    tempList.append(price[0])
+                else:
+                    tempList.append(price[date.hour+1])
+            else:
+                tempList.append(price[date.hour])
+        return np.array(tempList)

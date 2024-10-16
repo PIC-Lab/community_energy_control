@@ -119,3 +119,8 @@ class RunManager():
 
         os.rename(oldPath, newPath)
 
+        # Write dict to json
+        with open(newPath+'run.json', '+w') as fp:
+            json.dump(runJson, fp)
+
+

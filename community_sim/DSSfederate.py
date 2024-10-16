@@ -26,6 +26,7 @@ voltage_file = os.path.join(ResultsDir, 'voltage_results.csv')
 elements_file = os.path.join(ResultsDir, 'element_results.csv')
 load_powers_results_file = os.path.join(ResultsDir, 'load_powers_results.csv')
 battery_results_file = os.path.join(ResultsDir, 'battery_results.csv')
+battery_dispatch_file = os.path.join(ResultsDir, 'battery_dispatch.csv')
 
 # ----- HELICS federate setup -----
 # Register federate from json
@@ -72,6 +73,8 @@ dss.run_command('set controlmode=time')
 df = dss.get_all_elements('Load')
 df.to_csv(load_info_file)
 
+storageInfo = dss.get_all_elements('Storage')
+
 # ----- Primary co-simulation loop -----
 # Define lists for data collection
 main_results = []
@@ -79,6 +82,7 @@ voltage_results = []
 element_results = []
 load_powers_results = []
 battery_results = []
+battery_dispatch = []
 
 def recurse(d):
     try:
@@ -124,8 +128,6 @@ for step, current_time in enumerate(times):
 
     # load
     for loadName, set_point in loadPowers.items():
-        if loadName in ['3', '4']:
-            continue
         dss.set_power(loadName, element='Load', p=set_point)
 
     # Battery control
@@ -133,9 +135,19 @@ for step, current_time in enumerate(times):
             location = controlSet['location']
             for key, value in controlSet['devices'].items():
                 if 'Battery' in key:
-                    pass
-                    # dss.set_property(key+'1', 'State', value, element='Storage')
-                    # dss.set_property('Battery1', 'state', 'Charge', element='Storage')
+                    max_kW = storageInfo.loc['Storage.battery'+location, 'kWrated']
+                    value = round(min(max_kW, max(-1*max_kW, value)), 3)         # Clamp value to be no larger than rated kW 
+                    # print(key, value)
+                    # print(dss.get_property(key+location, 'kW', element='Storage'))
+                    # print(dss.get_property(key+location, 'State', element='Storage'))
+                    try:
+                        dss.set_property(key+location, 'kW', -1*value, element='Storage')
+                    except AssertionError:
+                        logger.debug(f'Ignored value of {value} for {key}')
+                    # print(dss.get_property(key+location, 'kW', element='Storage'))
+                    # print(dss.get_property(key+location, 'State', element='Storage'))
+                    
+                    # dss.set_power(key+location, element='Storage', p=value)
                 else:
                     continue
 
@@ -154,12 +166,11 @@ for step, current_time in enumerate(times):
     voltage_results.append(dss.get_all_bus_voltages(average=True))
 
     battery_results.append(battery_data['%stored'].to_dict())
+    battery_dispatch.append(battery_data['kW'].to_dict())
     
     # Get load data
     load_powers_data = {}
     for loadName in loadPowers:
-        if loadName in ['3', '4']:
-            continue
         load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})    
     load_powers_results.append(load_powers_data)
     
@@ -169,6 +180,7 @@ pd.DataFrame(main_results).to_csv(main_results_file)
 pd.DataFrame(voltage_results).to_csv(voltage_file)
 pd.DataFrame(load_powers_results).to_csv(load_powers_results_file)
 pd.DataFrame(battery_results).to_csv(battery_results_file)
+pd.DataFrame(battery_dispatch).to_csv(battery_dispatch_file)
 
 # finalize and close the federate
 h.helicsFederateDestroy(fed)

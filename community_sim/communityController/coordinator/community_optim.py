@@ -39,7 +39,7 @@ class Coordinator():
             temp = value['rating'] <= self.predictedLoad[:,int(value['Buildings'][0]):int(value['Buildings'][-1])]
             self.overloadList.append(temp)
             # Check if overload occurs at any point
-            if any(temp):
+            if np.any(temp):
                 overload = True
 
         return overload

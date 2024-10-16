@@ -90,7 +90,7 @@ class NeuromancerModel(ABC):
         '''
         pass
 
-    def TrainModel(self, dataset, load):
+    def TrainModel(self, dataset, load, test=True):
         '''
         Trains building thermal system or loads from file
 
@@ -98,8 +98,9 @@ class NeuromancerModel(ABC):
         :param load: (bool) load model from file instead of training
         '''
         # 
-        trainLoader, devLoader, testData = self.PrepareDataset(dataset)
-        self.testData = testData
+        if test:
+            trainLoader, devLoader, testData = self.PrepareDataset(dataset)
+            self.testData = testData
 
         # If load is true, skip training and just load from state dict file
         if load:
@@ -658,7 +659,7 @@ class ControllerSystem(NeuromancerModel):
         state_upper_bound_penalty = self.weights['x_max'] * (y < ymax)
 
         bat_life_lower_bound_penalty = self.weights['bat_min'] * (stored > batRef)
-        bat_life_upper_bound_penalty = self.weights['bat_max'] * (stored < 8)
+        bat_life_upper_bound_penalty = self.weights['bat_max'] * (stored < 8.0)
 
         # objectives and constraints names for nicer plot
         state_lower_bound_penalty.name = 'x_min'
@@ -677,7 +678,7 @@ class ControllerSystem(NeuromancerModel):
         if self.callback.debugLevel > DebugLevel.NO:
             self.problem.show(self.manager.runPath+"MPC_optim.png")
 
-    def TrainModel(self, dataset, tempMin, tempMax, load):
+    def TrainModel(self, dataset, tempMin, tempMax, load, test=True):
         '''
         Trains control system
 
@@ -686,12 +687,13 @@ class ControllerSystem(NeuromancerModel):
         :param tempMax: (float)
         :param load: (bool) load previous run from file
         '''
-        xmin_range = torch.distributions.Uniform(tempMin, tempMax)
+        if test:
+            xmin_range = torch.distributions.Uniform(tempMin, tempMax)
 
-        trainLoader, devLoader = [
-            self.PrepareDataset(dataset, xmin_range, 
-                            name=name) for name in ("train", "dev")
-        ]
+            trainLoader, devLoader = [
+                self.PrepareDataset(dataset, xmin_range, 
+                                name=name) for name in ("train", "dev")
+            ]
 
         # for key, value in trainLoader.dataset.datadict.items():
         #     print(key, value.shape)

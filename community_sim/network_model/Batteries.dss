@@ -1,14 +1,16 @@
-New Storage.Battery2  phases=2 Bus1=fdab9597-5c55-4a61-9601-f4b068121470.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery5  phases=2 Bus1=c0197704-3fa0-455a-bff3-8bf88c84f534.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery9  phases=2 Bus1=55f767d9-bff0-460c-8cb6-e01d6365d76d.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery10 phases=2 Bus1=76278818-3f87-4604-b00d-3d0db2d4c03f.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery12 phases=2 Bus1=28556b3f-53de-4280-9317-d39677271ee6.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery15 phases=2 Bus1=dbf66fd5-74ae-4a5e-b858-e8785eaf2c85.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery17 phases=2 Bus1=7dc2237c-26f8-458e-94b7-79e97fe3befc.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery24 phases=2 Bus1=f602643a-5d12-4aa6-825b-6a6a0a7224ba.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery25 phases=2 Bus1=a5963b28-3abc-4b6d-a872-4fb381fdf1ff.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery26 phases=2 Bus1=c298a9e0-1a23-410f-ad82-f83e489d8db5.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery27 phases=2 Bus1=40d5ceb9-9936-42dd-af44-d7303bd2a65d.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery28 phases=2 Bus1=3b537efb-9ba4-40a5-af21-c1e522c4f0a0.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
-New Storage.Battery22 phases=2 Bus1=258bdbfe-e9ea-46d9-84de-93dc2c2258a7.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=follow
+New Storage.Battery2  phases=2 Bus1=fdab9597-5c55-4a61-9601-f4b068121470.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery3  phases=2 Bus1=fdab9597-5c55-4a61-9601-f4b068121470.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery4  phases=2 Bus1=fdab9597-5c55-4a61-9601-f4b068121470.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery5  phases=2 Bus1=c0197704-3fa0-455a-bff3-8bf88c84f534.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery9  phases=2 Bus1=55f767d9-bff0-460c-8cb6-e01d6365d76d.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery10 phases=2 Bus1=76278818-3f87-4604-b00d-3d0db2d4c03f.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery12 phases=2 Bus1=28556b3f-53de-4280-9317-d39677271ee6.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery15 phases=2 Bus1=dbf66fd5-74ae-4a5e-b858-e8785eaf2c85.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery17 phases=2 Bus1=7dc2237c-26f8-458e-94b7-79e97fe3befc.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery24 phases=2 Bus1=f602643a-5d12-4aa6-825b-6a6a0a7224ba.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery25 phases=2 Bus1=a5963b28-3abc-4b6d-a872-4fb381fdf1ff.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery26 phases=2 Bus1=c298a9e0-1a23-410f-ad82-f83e489d8db5.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery27 phases=2 Bus1=40d5ceb9-9936-42dd-af44-d7303bd2a65d.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery28 phases=2 Bus1=3b537efb-9ba4-40a5-af21-c1e522c4f0a0.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
+New Storage.Battery22 phases=2 Bus1=258bdbfe-e9ea-46d9-84de-93dc2c2258a7.1.2 kV=0.20784609690826525 kW=0 kWrated=3.8 kWhrated=10 dispmode=external %stored=50
 
