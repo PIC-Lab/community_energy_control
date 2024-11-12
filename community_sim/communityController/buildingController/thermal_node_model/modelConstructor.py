@@ -225,8 +225,8 @@ class BuildingNode(NeuromancerModel):
         trainD = torch.tensor(trainD, dtype=torch.float32, device=self.device)
         trainData = DictDataset({'x': trainX, 'xn': trainX[:,0:1,:],
                                 'u': trainU, 'd': trainD}, name='train')
-        for key, value in trainData.datadict.items():
-            print(key, value.shape)
+        # for key, value in trainData.datadict.items():
+        #     print(key, value.shape)
         trainLoader = DataLoader(trainData, batch_size=self.batch_size,
                                 collate_fn=trainData.collate_fn, shuffle=False)
         
@@ -603,13 +603,13 @@ class ControllerSystem(NeuromancerModel):
         policy = Node(net, ['y', 'ymin', 'ymax', 'd_obs', 'cost', 'dr'], ['u_dec'], name='policy')
 
         batNet = blocks.MLP_bounds(
-        insize=self.ni+1,
+        insize=self.ni+2,
         outsize=self.nu,
         hsizes=self.hsizes,
         nonlin=nn.GELU,
-        min=-9,
-        max=9)
-        batPolicy = Node(batNet, ['cost', 'dr', 'batRef'], ['u_bat'], name='batPolicy')
+        min=-3.8,
+        max=3.8)
+        batPolicy = Node(batNet, ['cost', 'dr', 'batRef', 'batMax'], ['u_bat'], name='batPolicy')
 
         batModel = Node(BatteryModel(eff=0.95, capacity=10, nx=1, nu=1), ['stored', 'u_bat'], ['stored'], name='batModel')
 
@@ -645,6 +645,7 @@ class ControllerSystem(NeuromancerModel):
         u_bat = variable('u_bat')
         stored = variable('stored')
         batRef = variable('batRef')
+        # batMax = variable('batMax')
 
         # objectives
         u_tot = u + u_bat
@@ -659,17 +660,17 @@ class ControllerSystem(NeuromancerModel):
         state_upper_bound_penalty = self.weights['x_max'] * (y < ymax)
 
         bat_life_lower_bound_penalty = self.weights['bat_min'] * (stored > batRef)
-        bat_life_upper_bound_penalty = self.weights['bat_max'] * (stored < 8.0)
+        # bat_life_upper_bound_penalty = self.weights['bat_max'] * (stored < batMax)
 
         # objectives and constraints names for nicer plot
         state_lower_bound_penalty.name = 'x_min'
         state_upper_bound_penalty.name = 'x_max'
         bat_life_lower_bound_penalty.name = 'bat_life_min'
-        bat_life_upper_bound_penalty.name = 'bat_life_max'
+        # bat_life_upper_bound_penalty.name = 'bat_life_max'
 
         # list of constraints and objectives
         objectives = [action_loss, dr_loss, cost_loss]
-        constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_life_upper_bound_penalty]
+        constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty]
 
         # Problem construction
         nodes = [self.system]
@@ -747,6 +748,7 @@ class ControllerSystem(NeuromancerModel):
         dr = torch.tensor(np.zeros((1, nsteps_test+1, 1)), dtype=torch.float32)
         stored0 = torch.tensor(self.rng.uniform(0,10,[1,1,1]), dtype=torch.float32, device=self.device)
         batRef = torch.tensor(pd.read_csv('socSchedule.csv', header=None).to_numpy(), dtype=torch.float32, device=self.device).reshape(1, nsteps_test, 1) * 10
+        batMax = torch.tensor(np.ones((1,nsteps_test+1,1))*8.0, dtype=torch.float32, device=self.device)
 
         data = {'xn': x0,
                 'y': x0[:,:,self.y_idx],
@@ -756,7 +758,8 @@ class ControllerSystem(NeuromancerModel):
                 'cost': torch_price,
                 'dr': dr,
                 'stored': stored0,
-                'batRef': batRef}
+                'batRef': batRef,
+                'batMax': batMax}
         print('Input dataset')
         for key, value in data.items():
             print(key, value.shape)
@@ -896,7 +899,8 @@ class ControllerSystem(NeuromancerModel):
         batched_x0 = torch.stack([torch.tensor(self.Get_X0(dataset['X']),
                                                dtype=torch.float32, device=self.device).unsqueeze(0)
                                                for _ in range(self.n_samples)])
-        batched_stored0 = torch.tensor(self.rng.uniform(0,1,[self.n_samples,1,1]), dtype=torch.float32, device=self.device)
+        batched_stored0 = torch.tensor(self.rng.uniform(0,10,[self.n_samples,1,1]), dtype=torch.float32, device=self.device)
+        batched_batMax = torch.tensor(np.ones((self.n_samples,self.nsteps+1,1))*8.0, dtype=torch.float32, device=self.device)
 
         data = DictDataset(
             {"xn": batched_x0,
@@ -907,11 +911,12 @@ class ControllerSystem(NeuromancerModel):
             "cost": batched_price,
             'dr': batched_dr,
             "stored": batched_stored0,
-            "batRef": batched_batRef},
+            "batRef": batched_batRef,
+            "batMax": batched_batMax},
             name=name,
         )
-        for key, value in data.datadict.items():
-            print(key, value.shape)
+        # for key, value in data.datadict.items():
+        #     print(key, value.shape)
 
         return DataLoader(data, batch_size=self.batch_size, collate_fn=data.collate_fn, shuffle=False)
 
@@ -945,6 +950,7 @@ class BatteryModel(nn.Module):
         self.nu = nu
         self.in_features = nx+nu
         self.out_features = nx
+        self.dt = 60
 
         self.eff = eff
         self.capacity = capacity
@@ -953,23 +959,10 @@ class BatteryModel(nn.Module):
         assert len(x.shape) == 2
         assert len(u.shape) == 2
 
-        x = x + self.eff * u
-        # x = torch.clamp(x, 0, self.capacity)
+        x = x + self.eff * u / self.dt
+        x = torch.clamp(x, self.capacity*0.2, self.capacity)
 
         return x
-    
-class BatteryCorrection(nn.Module):
-    def __init__(self, capacity):
-        super().__init__()
-        self.capacity = capacity
-
-    def forward(self, x, u):
-        assert len(x.shape) == 2
-        assert len(u.shape) == 2
-
-        zero_tensor = torch.zeros(x.size())
-        u = torch.where(x + u > self.capacity, u, zero_tensor)
-        u = torch.where(x + u < 0, u, zero_tensor) 
 
 class iMODE(blocks.Block):
     def __init__(self, insize, outsize, bias=True, linear_map=slim.Linear, nonlin=nn.Softplus, hsizes=[64], linargs=dict()):
@@ -1105,7 +1098,7 @@ class Callback_NODE(Callback):
     def end_batch(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_VALUES:
             return
-
+        
         self.trainValues['train_u'].append(output['train_u'].detach().cpu().flatten().numpy())
         self.trainValues['train_y'].append(output['train_y'].detach().cpu().flatten().numpy())
         self.trainValues['train_yhat'].append(output['train_x'].detach().cpu().flatten().numpy())
@@ -1156,17 +1149,26 @@ class Callback_Controller(Callback):
         self.ResetTrainValues()
 
     def ResetTrainValues(self):
-        self.trainValues = {'train_u': [], 'train_y': [], 'train_ymin': [], 'train_ymax': [], 'train_ubat': [], 'train_stored': []}
+        self.trainValues = {'train_u': [], 'train_y': [], 'train_ymin': [], 'train_ymax': [],
+                            'train_ubat': [], 'train_stored': [], 'train_batRef': []}
+        self.lossValues = {'bat_max': [], 'bat_max_value': [], 'bat_max_violation': []}
 
     def end_batch(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_VALUES:
             return
+
         self.trainValues['train_u'].append(output['train_u'].detach().cpu().flatten().numpy())
         self.trainValues['train_y'].append(output['train_y'][:,:-1,:].detach().cpu().flatten().numpy())
         self.trainValues['train_ymin'].append(output['train_ymin'][:,:-1,:].detach().cpu().flatten().numpy())
         self.trainValues['train_ymax'].append(output['train_ymax'][:,:-1,:].detach().cpu().flatten().numpy())
+
         self.trainValues['train_ubat'].append(output['train_u_bat'][:,:,:].detach().cpu().flatten().numpy())
         self.trainValues['train_stored'].append(output['train_stored'][:,:-1,:].detach().cpu().flatten().numpy())
+        self.trainValues['train_batRef'].append(output['train_batRef'][:,:-1,:].detach().cpu().flatten().numpy())
+
+        # self.lossValues['bat_max'].append(output['train_stored_lt_batMax'].detach().cpu().flatten().numpy())
+        # self.lossValues['bat_max_value'].append(output['train_stored_lt_batMax_value'].detach().cpu().flatten().numpy())
+        # self.lossValues['bat_max_violation'].append(output['train_stored_lt_batMax_violation'].detach().cpu().flatten().numpy())
 
     def begin_epoch(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_VALUES:
@@ -1190,16 +1192,36 @@ class Callback_Controller(Callback):
 
         train_ubat = np.array(self.trainValues['train_ubat']).flatten()
         train_stored = np.array(self.trainValues['train_stored']).flatten()
+        train_batRef = np.array(self.trainValues['train_batRef']).flatten()
         fig, ax = plt.subplots(2, figsize=(10,8))
         ax[0].plot(train_ubat)
         ax[0].set(title='u', xlim=[0,2000])
         ax[1].plot(train_stored)
+        ax[1].plot(train_batRef, '--', c='k', zorder=-1)
         ax[1].set(title='y', xlim=[0,2000])
         plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
         plt.tight_layout()
         Path(f'{self.savePath}/debug/Battery').mkdir(exist_ok=True, parents=True)
         fig.savefig(f"{self.savePath}/debug/Battery/epoch{output['train_epoch']}")
         plt.close(fig)
+
+        # bat_max = np.array(self.lossValues['bat_max']).flatten()
+        # bat_max_value = np.array(self.lossValues['bat_max_value']).flatten()
+        # bat_max_violation = np.array(self.lossValues['bat_max_violation']).flatten()
+        # fig, ax = plt.subplots(3, figsize=(10,8))
+        # ax[0].plot(bat_max, label='bat_max')
+        # ax[0].legend()
+        # ax[1].plot(bat_max_value, label='bat_max_value')
+        # ax[1].set(xlim=[0,2000])
+        # ax[1].legend()
+        # ax[2].plot(bat_max_violation, label='bat_max_violation')
+        # ax[2].set(xlim=[0,2000])
+        # ax[2].legend()
+        # plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
+        # plt.tight_layout()
+        # Path(f'{self.savePath}/debug/Loss').mkdir(exist_ok=True, parents=True)
+        # fig.savefig(f"{self.savePath}/debug/Loss/epoch{output['train_epoch']}")
+        # plt.close(fig)
 
         self.ResetTrainValues()
 
@@ -1209,12 +1231,14 @@ class Callback_Controller(Callback):
         self.loss.append(output)
 
     def end_train(self, trainer, output):
-        if self.debugLevel < DebugLevel.EPOCH_LOSS:
+        if self.debugLevel < DebugLevel.EPOCH_VALUES:
             return
         ims = [imageio.v3.imread(f"{self.savePath}/debug/HVAC/epoch{i}.png") for i in range(len(os.listdir(self.savePath+'/debug/HVAC/')))]
         imageio.mimwrite(self.savePath+'/HVAC_train.gif', ims, fps=10)
         ims = [imageio.v3.imread(f"{self.savePath}/debug/Battery/epoch{i}.png") for i in range(len(os.listdir(self.savePath+'/debug/Battery/')))]
         imageio.mimwrite(self.savePath+'/battery_train.gif', ims, fps=10)
+        # ims = [imageio.v3.imread(f"{self.savePath}/debug/Loss/epoch{i}.png") for i in range(len(os.listdir(self.savePath+'/debug/Loss/')))]
+        # imageio.mimwrite(self.savePath+'/loss.gif', ims, fps=10)
         shutil.rmtree(self.savePath+'/debug/')
 
 class Normalizer():
@@ -1449,55 +1473,3 @@ def TOUPricing(date, timeSteps=96):
     # return tempList
 
     return price[date.hour]
-
-class DebugLevel(Enum):
-    '''
-    Enum used for setting debug level of training
-    '''
-    NO = 0
-    MODEL_DIAGRAMS = 1
-    EPOCH_LOSS = 2
-    EPOCH_VALUES = 3
-
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value < other.value
-        if isinstance(other, numbers.Number):
-            return self.value < other
-        return NotImplemented
-    
-    def __le__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value <= other.value
-        if isinstance(other, numbers.Number):
-            return self.value <= other
-        return NotImplemented
-
-    def __gt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value > other.value
-        if isinstance(other, numbers.Number):
-            return self.value > other
-        return NotImplemented
-    
-    def __ge__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value >= other.value
-        if isinstance(other, numbers.Number):
-            return self.value >= other
-        return NotImplemented
-
-    def __eq__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value == other.value
-        if isinstance(other, numbers.Number):
-            return self.value == other
-        return NotImplemented
-    
-    def __ne__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value != other.value
-        if isinstance(other, numbers.Number):
-            return self.value != other
-        return NotImplemented
-        

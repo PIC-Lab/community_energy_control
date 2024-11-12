@@ -6,7 +6,6 @@ import json
 
 import runManager
 from modelConstructor import *
-from neuro_util import Normalizer
 
 def Main():
     # torch.manual_seed(0)
@@ -108,19 +107,19 @@ def Main():
         # Controller model
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
-            'weights': {'action_loss': 0.01, 'dr_loss': 0.5, 'cost_loss': 1.0,
-                        'x_min': 10.0, 'x_max': 10.0, 'bat_min': 20.0, 'bat_max': 20.0},
+            'weights': {'action_loss': 0.1, 'dr_loss': 0.1, 'cost_loss': 2.0,
+                        'x_min': 10.0, 'x_max': 10.0, 'bat_min': 10.0, 'bat_max': 10.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
-            'hsizes': [200,200],
+            'hsizes': [200,200,200],
             'train_params': {
                 'max_epochs': 200,
                 'patience': 30,
                 'warmup': 50,
                 'lr': 0.001,
                 'nsteps': 60,
-                'batch_size': 100,
-                'n_samples': 1000
+                'batch_size': 10,
+                'n_samples': 500
             }
         }
         # -----------------------------
@@ -171,7 +170,6 @@ def Main():
     for file in buildingModels.iterdir():
         if (file / 'workflow.osw').exists() and (file.name in simParams['controlledAliases']):
             buildings.append(file.name)
-    # buildings = ['4']
 
     # ------------ Train classifier ------------
     tempList = []
@@ -276,7 +274,7 @@ def Main():
                                         thermalModel=buildingThermal.model,
                                         classifier=classifier.model,
                                         device=device,
-                                        debugLevel=DebugLevel.EPOCH_VALUES,
+                                        debugLevel=DebugLevel.EPOCH_LOSS,
                                         saveDir=f"{manager.runPath+controllerModelName}/{building}")
         controlSystem.CreateModel()
 

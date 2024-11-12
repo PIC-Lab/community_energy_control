@@ -73,6 +73,7 @@ controller = CommunityController(aliasesSensorIdx)
 outputs = {alias: [] for alias in aliasesSensorIdx}
 
 # Execute federate and start co-sim
+first = True
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
 for step, current_time in enumerate(times):
@@ -103,7 +104,10 @@ for step, current_time in enumerate(times):
     
     sensorValues = {alias: {} for alias in aliasesSensorIdx}
     for key, value in batterySOC.items():
-        sensorValues[simIdxMapping[key[key.index('y')+1:]]]['batterySOC'] = value / 100
+        try:
+            sensorValues[simIdxMapping[key[key.index('y')+1:]]]['batterySOC'] = value / 100 * 10
+        except KeyError:
+            logger.debug(f"No matching key found for {key}")
     for key, value in indoorTemp.items():
         if key in simParams['controlledAliases']:
             sensorValues[simIdxMapping[key]]['indoorTemp'] = value
@@ -123,6 +127,11 @@ for step, current_time in enumerate(times):
         input_dicts.append(tempDict)
 
     for alias in aliasesSensorIdx:
+        if first:
+            predictedTraj = {}
+            predictedTraj[alias] = controller.trajectoryList[alias]['stored'][0,:,0].detach().numpy()
+            first = False
+
         controlTraj = {}
         controlTraj['Time'] = current_time
         controlTraj['Control Effort'] = controller.trajectoryList[alias]['u'][0,0,0].detach().item()
@@ -146,6 +155,8 @@ for key, building in outputs.items():
     df = pd.DataFrame(building)
     col = df.pop('Time')
     df.insert(0, col.name, col)
+    # print(len(df), len(predictedTraj[key]))
+    # df['PredStored'] = np.pad(predictedTraj[key], (0,len(df) - len(predictedTraj[key])))
     outputs_df.append(df)
 
 # Save data to csv

@@ -27,6 +27,8 @@ elements_file = os.path.join(ResultsDir, 'element_results.csv')
 load_powers_results_file = os.path.join(ResultsDir, 'load_powers_results.csv')
 battery_results_file = os.path.join(ResultsDir, 'battery_results.csv')
 battery_dispatch_file = os.path.join(ResultsDir, 'battery_dispatch.csv')
+battery_power_file = os.path.join(ResultsDir, 'battery_power.csv')
+battery_state_file = os.path.join(ResultsDir, 'battery_state.csv')
 
 # ----- HELICS federate setup -----
 # Register federate from json
@@ -83,18 +85,8 @@ element_results = []
 load_powers_results = []
 battery_results = []
 battery_dispatch = []
-
-def recurse(d):
-    try:
-        if isinstance(d, dict):
-            loaded_d = d
-        else:
-            loaded_d = json.loads(d)
-        for k, v in loaded_d.items():
-            loaded_d[k] = recurse(v)
-    except(json.JSONDecodeError, TypeError):
-        return d
-    return loaded_d
+battery_power = []
+battery_state = []
 
 # Execute federate and start co-sim
 h.helicsFederateEnterExecutingMode(fed)
@@ -136,18 +128,18 @@ for step, current_time in enumerate(times):
             for key, value in controlSet['devices'].items():
                 if 'Battery' in key:
                     max_kW = storageInfo.loc['Storage.battery'+location, 'kWrated']
-                    value = round(min(max_kW, max(-1*max_kW, value)), 3)         # Clamp value to be no larger than rated kW 
+                    # value = round(min(max_kW, max(-1*max_kW, value)), 3)         # Clamp value to be no larger than rated kW 
                     # print(key, value)
                     # print(dss.get_property(key+location, 'kW', element='Storage'))
                     # print(dss.get_property(key+location, 'State', element='Storage'))
-                    try:
-                        dss.set_property(key+location, 'kW', -1*value, element='Storage')
-                    except AssertionError:
-                        logger.debug(f'Ignored value of {value} for {key}')
+                    # try:
+                    #     dss.set_property(key+location, 'kW', value, element='Storage')
+                    # except AssertionError:
+                    #     logger.debug(f'Ignored value of {value} for {key}')
                     # print(dss.get_property(key+location, 'kW', element='Storage'))
                     # print(dss.get_property(key+location, 'State', element='Storage'))
                     
-                    # dss.set_power(key+location, element='Storage', p=value)
+                    dss.set_power(key+location, element='Storage', p=value)
                 else:
                     continue
 
@@ -167,13 +159,16 @@ for step, current_time in enumerate(times):
 
     battery_results.append(battery_data['%stored'].to_dict())
     battery_dispatch.append(battery_data['kW'].to_dict())
+    battery_power.append(dss.get_power('Battery4', element='Storage', total=True)[0])
+    battery_state.append(battery_data['State'].to_dict())
     
     # Get load data
     load_powers_data = {}
     for loadName in loadPowers:
-        load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})    
+        load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})
+        logger.debug(f"{loadName}, {dss.get_power(loadName, element='Load')}") 
+        logger.debug(f"{loadName}, {dss.get_power(loadName, element='Load', total=True)}")
     load_powers_results.append(load_powers_data)
-    
 
 # Save results files
 pd.DataFrame(main_results).to_csv(main_results_file)
@@ -181,6 +176,8 @@ pd.DataFrame(voltage_results).to_csv(voltage_file)
 pd.DataFrame(load_powers_results).to_csv(load_powers_results_file)
 pd.DataFrame(battery_results).to_csv(battery_results_file)
 pd.DataFrame(battery_dispatch).to_csv(battery_dispatch_file)
+pd.DataFrame(battery_power).to_csv(battery_power_file)
+pd.DataFrame(battery_state).to_csv(battery_state_file)
 
 # finalize and close the federate
 h.helicsFederateDestroy(fed)

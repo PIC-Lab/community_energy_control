@@ -28,8 +28,8 @@ class BuildingController:
             id: (str) id of the controller's building
             testCase: (str) name of test case being run, defaults to MPC
         """
-        self.actuatorValues = {'heatingSetpoint': 0, 'coolingSetpoint': 0, 'battery': 3.8}
-        self.sensorValues = {'indoorAirTemp': 0, 'batterySOC': 0.5}
+        self.actuatorValues = {'heatingSetpoint': 0, 'coolingSetpoint': 0, 'battery': 0}
+        self.sensorValues = {'indoorAirTemp': 0, 'batterySOC': 5}
         self.buildingID = id
         self.devices = devices
 
@@ -86,7 +86,8 @@ class BuildingController:
                             'dr': torch.tensor(dr, dtype=torch.float32),
                             'cost': torch.tensor(BuildingController.TOUPricing(currentTime, self.nsteps)[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'stored': torch.tensor(np.array([self.sensorValues['batterySOC']])[np.newaxis,:,np.newaxis], dtype=torch.float32),
-                            'batRef': torch.tensor(self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')[np.newaxis,:], dtype=torch.float32)}
+                            'batRef': torch.tensor(self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')[np.newaxis,:], dtype=torch.float32),
+                            'batMax': torch.tensor(np.ones((1,self.nsteps+1,1))*8.0, dtype=torch.float32)}
         for key, value in self.horizonData.items():
             print(key, value.shape)
 
@@ -172,14 +173,17 @@ class BuildingController:
 
         device = torch.device("cpu")
 
+        # ----- Make sure you run prepareRun.py first -----
         run = 'latestRun'
-        run = 'bat_AB_test_1'
+        # run = 'bat_AB_test_1'
+        run = 'bat_AB_test_2'
         # run = 'alf_AllBuildings_1stPass'
+        # --------------------------------------------------
 
         # Path relative to the directory the sim is being run in. Needs to be fixed
         filePath = os.path.join(self.dirName, 'thermal_node_model')
 
-        manager = RunManager(run, saveDir=f'{filePath}/savedRuns')
+        manager = RunManager(run, saveDir=f'{filePath}/deployModels')
         manager.LoadRunJson(run)
         norm = Normalizer()
         norm.load(f"{manager.runPath}norm/{self.buildingID}/")

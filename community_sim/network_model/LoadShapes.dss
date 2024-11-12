@@ -26,3 +26,5 @@ New Loadshape.feature_25 npts= 8759 interval=1.0 mult = (file=./profiles/load_25
 New Loadshape.feature_26 npts= 8759 interval=1.0 mult = (file=./profiles/load_26_pu.csv)
 New Loadshape.feature_27 npts= 8759 interval=1.0 mult = (file=./profiles/load_27_pu.csv)
 New Loadshape.feature_28 npts= 8759 interval=1.0 mult = (file=./profiles/load_28_pu.csv)
+
+New Loadshape.bat_test npts= 24     interval=1.0 mult = (file=./profiles/testBat.csv) 

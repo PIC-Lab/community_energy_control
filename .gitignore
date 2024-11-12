@@ -172,6 +172,7 @@ community_sim/34BusSystem.zip
 
 # Saved Models
 **/savedRuns
+**/deployModels
 
 # Deploy file
 deploy/

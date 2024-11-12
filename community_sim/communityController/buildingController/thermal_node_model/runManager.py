@@ -99,8 +99,8 @@ class RunManager():
             saveDir: (str) name of directory where runs are saved
         '''
         runJson = RunManager.ReadRunJson(saveDir)
-        oldPath = saveDir+'/latestRun'
-        newPath = saveDir+'/'+runJson['name']
+        oldPath = saveDir+'/latestRun/'
+        newPath = saveDir+'/'+runJson['name']+'/'
         if os.path.isdir(newPath):
             userInput = input("There is already a run with this name. Please enter a new name, or leave blank to overwrite existing run. ")
             looping = True
@@ -117,10 +117,10 @@ class RunManager():
                     else:
                         looping = False
 
-        os.rename(oldPath, newPath)
-
         # Write dict to json
-        with open(newPath+'run.json', '+w') as fp:
+        with open(oldPath+'run.json', '+w') as fp:
             json.dump(runJson, fp)
+
+        os.rename(oldPath, newPath)
 
 
