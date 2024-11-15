@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import shutil
 import json
+import gc
 
 import runManager
 from modelConstructor import *
@@ -93,12 +94,12 @@ def Main():
         # Classifier model
         classifierModelName = "classifier"
         manager.models[classifierModelName] = {
-            'hsizes': [64, 64],
+            'hsizes': [64],
             'train_params': {
                 'max_epochs': 500,
                 'patience': 50,
                 'warmup': 100,
-                'lr': 0.0001,
+                'lr': 0.001,
                 'nsteps': 30,
                 'batch_size': 10
             }
@@ -108,7 +109,7 @@ def Main():
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
             'weights': {'action_loss': 0.1, 'dr_loss': 0.1, 'cost_loss': 2.0,
-                        'x_min': 10.0, 'x_max': 10.0, 'bat_min': 10.0, 'bat_max': 10.0},
+                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 10.0, 'bat_max': 10.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
             'hsizes': [200,200,200],
@@ -274,7 +275,7 @@ def Main():
                                         thermalModel=buildingThermal.model,
                                         classifier=classifier.model,
                                         device=device,
-                                        debugLevel=DebugLevel.EPOCH_LOSS,
+                                        debugLevel=DebugLevel.EPOCH_VALUES,
                                         saveDir=f"{manager.runPath+controllerModelName}/{building}")
         controlSystem.CreateModel()
 
@@ -318,6 +319,8 @@ def Main():
             print(f"Finished with building {i+1}, moving to next building")
             shutil.copytree(f"{controlSystem.saveDir}/best", controlSystem.saveDir, dirs_exist_ok=True)
             shutil.rmtree(f"{controlSystem.saveDir}/best")
+            # Manually invoking garbage collection because the training loop seems to steadily accumulate used memory, which shouldn't be happening
+            gc.collect()
             i += 1
             count = 0
             bestLoss = 1e5

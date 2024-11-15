@@ -19,6 +19,7 @@ class Coordinator():
         self.reductionFactor = np.zeros((self.nsteps, self.numBuildings))
         self.predictedLoad = np.zeros((self.nsteps, self.numBuildings))
         self.predictedFlexibility = np.zeros((self.nsteps, self.numBuildings))
+        self.baseLoad = np.zeros((self.nsteps))
         self.countSinceChange = 0
 
         self.dirName = os.path.dirname(__file__)
@@ -78,7 +79,7 @@ class Coordinator():
             self.reductionFactor[:10,:] = np.ones((10, self.numBuildings)) * np.random.randint(0, 2)
             self.countSinceChange = 0
 
-    def Step(self, predictedLoad, predictedFlex):
+    def Step(self):
         '''
         '''
         if self.Assess():

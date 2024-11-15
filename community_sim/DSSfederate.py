@@ -71,9 +71,15 @@ dss = OpenDSS([MasterFile], stepsize, start_time)
 # Run additional OpenDSS commands
 dss.run_command('set controlmode=time')
 
+# for alias in simParams['controlledAliases']:
+#     dss.remove_loadshape(alias)
+
 # Get info on all properties of a class
 df = dss.get_all_elements('Load')
 df.to_csv(load_info_file)
+
+for alias in df.index:
+    dss.remove_loadshape(alias)
 
 storageInfo = dss.get_all_elements('Storage')
 
@@ -127,18 +133,6 @@ for step, current_time in enumerate(times):
             location = controlSet['location']
             for key, value in controlSet['devices'].items():
                 if 'Battery' in key:
-                    max_kW = storageInfo.loc['Storage.battery'+location, 'kWrated']
-                    # value = round(min(max_kW, max(-1*max_kW, value)), 3)         # Clamp value to be no larger than rated kW 
-                    # print(key, value)
-                    # print(dss.get_property(key+location, 'kW', element='Storage'))
-                    # print(dss.get_property(key+location, 'State', element='Storage'))
-                    # try:
-                    #     dss.set_property(key+location, 'kW', value, element='Storage')
-                    # except AssertionError:
-                    #     logger.debug(f'Ignored value of {value} for {key}')
-                    # print(dss.get_property(key+location, 'kW', element='Storage'))
-                    # print(dss.get_property(key+location, 'State', element='Storage'))
-                    
                     dss.set_power(key+location, element='Storage', p=value)
                 else:
                     continue
@@ -149,8 +143,9 @@ for step, current_time in enumerate(times):
     # Publish battery results
     logger.debug("Publishing values to other federates")
     battery_data = dss.get_all_elements('Storage')
-    logger.debug(battery_data["%stored"].to_dict())
-    h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(battery_data['%stored'].to_dict()))
+    batteryEnergy = battery_data['%stored'] / 100 * battery_data['kWhrated']
+    logger.debug(batteryEnergy.to_dict())
+    h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(batteryEnergy.to_dict()))
       
     # Get outputs for the feeder, all voltages, and individual element voltage and power
     main_results.append(dss.get_circuit_info())
@@ -166,8 +161,6 @@ for step, current_time in enumerate(times):
     load_powers_data = {}
     for loadName in loadPowers:
         load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})
-        logger.debug(f"{loadName}, {dss.get_power(loadName, element='Load')}") 
-        logger.debug(f"{loadName}, {dss.get_power(loadName, element='Load', total=True)}")
     load_powers_results.append(load_powers_data)
 
 # Save results files

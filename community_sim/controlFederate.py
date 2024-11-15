@@ -25,7 +25,6 @@ simIdxMapping = {v: k for k, v in sensorIdxMapping.items()}     # Map simulation
 controlInMap = {'indoorAirTemp': 'living space Air Temperature'}
 controlOutMap = {'heatingSetpoint': 'heating setpoint', 'coolingSetpoint': 'cooling setpoint',
                  'battery': 'Battery'}
-sensorNames = ['indoorAirTemp', 'batterySOC']
 
 # ----- HELICS federate setup -----
 # Register federate from json
@@ -105,12 +104,12 @@ for step, current_time in enumerate(times):
     sensorValues = {alias: {} for alias in aliasesSensorIdx}
     for key, value in batterySOC.items():
         try:
-            sensorValues[simIdxMapping[key[key.index('y')+1:]]]['batterySOC'] = value / 100 * 10
+            sensorValues[simIdxMapping[key[key.index('y')+1:]]]['batterySOC'] = value
         except KeyError:
             logger.debug(f"No matching key found for {key}")
     for key, value in indoorTemp.items():
         if key in simParams['controlledAliases']:
-            sensorValues[simIdxMapping[key]]['indoorTemp'] = value
+            sensorValues[simIdxMapping[key]]['indoorAirTemp'] = value
 
     logger.debug(sensorValues)
 

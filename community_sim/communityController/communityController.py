@@ -67,8 +67,10 @@ class CommunityController:
         # Forecast flexibility
 
         # Update coordinator
-        coordinateSignals = {}
-        self.coordinator.Step(self.predictedLoad, self.predictedFlex)
+        self.coordinator.predictedLoad = self.predictedLoad
+        self.coordinator.predictedFlexibility = self.predictedFlex
+        self.coordinator.baseLoad = np.ones(self.coordinator.nsteps) * 10
+        self.coordinator.Step()
         coordinateSignals = self.coordinator.reductionFactor
 
         # Update controllers

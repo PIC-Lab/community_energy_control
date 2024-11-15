@@ -581,6 +581,8 @@ class ControllerSystem(NeuromancerModel):
         self.hsizes = manager.models[name]['hsizes']
         self.n_samples = manager.models[name]['train_params']['n_samples']
 
+        self.batSize = 16.4
+
         self.thermalModel = thermalModel
         self.classifier = classifier
 
@@ -607,11 +609,11 @@ class ControllerSystem(NeuromancerModel):
         outsize=self.nu,
         hsizes=self.hsizes,
         nonlin=nn.GELU,
-        min=-3.8,
-        max=3.8)
+        min=-9.6,
+        max=9.6)
         batPolicy = Node(batNet, ['cost', 'dr', 'batRef', 'batMax'], ['u_bat'], name='batPolicy')
 
-        batModel = Node(BatteryModel(eff=0.95, capacity=10, nx=1, nu=1), ['stored', 'u_bat'], ['stored'], name='batModel')
+        batModel = Node(BatteryModel(eff=0.95, capacity=self.batSize, nx=1, nu=1), ['stored', 'u_bat'], ['stored'], name='batModel')
 
         # Freeze thermal model
         for p in self.thermalModel.nodes[0].parameters():
@@ -649,7 +651,6 @@ class ControllerSystem(NeuromancerModel):
 
         # objectives
         u_tot = u + u_bat
-        action_loss = u_tot.minimize(weight=self.weights['action_loss'], name='action_loss')
 
         dr_loss = self.weights['dr_loss'] * (((u_tot) * dr) == torch.tensor(np.zeros((self.batch_size, self.nsteps, 1)), device=self.device))
         dr_loss.name = 'dr_loss'
@@ -669,7 +670,7 @@ class ControllerSystem(NeuromancerModel):
         # bat_life_upper_bound_penalty.name = 'bat_life_max'
 
         # list of constraints and objectives
-        objectives = [action_loss, dr_loss, cost_loss]
+        objectives = [dr_loss, cost_loss]
         constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty]
 
         # Problem construction
@@ -746,9 +747,10 @@ class ControllerSystem(NeuromancerModel):
                           dtype=torch.float32, device=self.device).reshape(1,1,self.nx)
         dr = torch.tensor(psl.signals.step(nsteps_test+1, 1, min=0, max=1, randsteps=5, rng=self.rng), dtype=torch.float32).reshape(1, nsteps_test+1, 1)
         dr = torch.tensor(np.zeros((1, nsteps_test+1, 1)), dtype=torch.float32)
-        stored0 = torch.tensor(self.rng.uniform(0,10,[1,1,1]), dtype=torch.float32, device=self.device)
-        batRef = torch.tensor(pd.read_csv('socSchedule.csv', header=None).to_numpy(), dtype=torch.float32, device=self.device).reshape(1, nsteps_test, 1) * 10
-        batMax = torch.tensor(np.ones((1,nsteps_test+1,1))*8.0, dtype=torch.float32, device=self.device)
+        stored0 = torch.tensor(self.rng.uniform(0,self.batSize,[1,1,1]), dtype=torch.float32, device=self.device)
+        batRefYear = np.tile(pd.read_csv('socSchedule.csv', header=None).to_numpy(), (len(dataset['D']) // 1440,1)) * self.batSize
+        batRef = torch.tensor(self.Get_D(batRefYear, nsteps_test, start_idx), dtype=torch.float32, device=self.device).unsqueeze(0)
+        batMax = torch.tensor(np.ones((1,nsteps_test+1,1))*0.8*self.batSize, dtype=torch.float32, device=self.device)
 
         data = {'xn': x0,
                 'y': x0[:,:,self.y_idx],

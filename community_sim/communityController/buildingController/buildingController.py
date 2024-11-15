@@ -28,8 +28,8 @@ class BuildingController:
             id: (str) id of the controller's building
             testCase: (str) name of test case being run, defaults to MPC
         """
-        self.actuatorValues = {'heatingSetpoint': 0, 'coolingSetpoint': 0, 'battery': 0}
-        self.sensorValues = {'indoorAirTemp': 0, 'batterySOC': 5}
+        self.actuatorValues = {'heatingSetpoint': 18, 'coolingSetpoint': 24, 'battery': 0}
+        self.sensorValues = {'indoorAirTemp': 21, 'batterySOC': 8.4}
         self.buildingID = id
         self.devices = devices
 
@@ -44,7 +44,7 @@ class BuildingController:
         self.cl_system = None
 
         # Load building specific parameters
-        self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 4.444444444444445}      # Default value, should be commented out
+        self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 1}      # Default value, should be commented out
         # Temporary, needs to be fixed later
         self.setpointSchedule = pd.read_csv(os.path.join(self.dirName, '../../setpointSchedule.csv')
                                             , header=None).to_numpy()[np.newaxis, :]
@@ -88,8 +88,8 @@ class BuildingController:
                             'stored': torch.tensor(np.array([self.sensorValues['batterySOC']])[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'batRef': torch.tensor(self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')[np.newaxis,:], dtype=torch.float32),
                             'batMax': torch.tensor(np.ones((1,self.nsteps+1,1))*8.0, dtype=torch.float32)}
-        for key, value in self.horizonData.items():
-            print(key, value.shape)
+        
+        self.horizonData = self.norm.norm(self.horizonData, keys=['y', 'y', 'y', 'y', 'd', 'leave', 'p', 'leave', 'leave', 'leave'])
 
     def PushControlSignals(self):
         """
@@ -175,8 +175,8 @@ class BuildingController:
 
         # ----- Make sure you run prepareRun.py first -----
         run = 'latestRun'
-        # run = 'bat_AB_test_1'
-        run = 'bat_AB_test_2'
+        # run = 'bat_AB_test_2'
+        # run = 'bat_AB_test_3'
         # run = 'alf_AllBuildings_1stPass'
         # --------------------------------------------------
 
@@ -185,8 +185,8 @@ class BuildingController:
 
         manager = RunManager(run, saveDir=f'{filePath}/deployModels')
         manager.LoadRunJson(run)
-        norm = Normalizer()
-        norm.load(f"{manager.runPath}norm/{self.buildingID}/")
+        self.norm = Normalizer()
+        self.norm.load(f"{manager.runPath}norm/{self.buildingID}/")
 
         for key in manager.models.keys():
             if key.find('buildingThermal') != -1:
@@ -242,7 +242,7 @@ class BuildingController:
                                          d_idx=initParams['d_idx'],
                                          manager=manager,
                                          name=controllerModelName,
-                                         norm=norm,
+                                         norm=self.norm,
                                          thermalModel=buildingThermal.model,
                                          classifier=classifier.model,
                                          device=device,

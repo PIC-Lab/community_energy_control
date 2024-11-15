@@ -12144,7 +12144,7 @@ OS:ShadingSurface,
 
 OS:Building,
   {33f90ea0-9367-4173-a147-c56864701406}, !- Handle
-  Building 1,                             !- Name
+  Building 3,                             !- Name
   ,                                       !- Building Sector Type
   ,                                       !- North Axis {deg}
   8,                                      !- Nominal Floor to Floor Height {m}

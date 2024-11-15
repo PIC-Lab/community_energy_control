@@ -202,7 +202,7 @@ OS:AdditionalProperties,
 
 OS:Building,
   {d81cebb4-02ae-4b12-a11e-c7400d2f02ef}, !- Handle
-  Building 1,                             !- Name
+  Building 21,                             !- Name
   ,                                       !- Building Sector Type
   ,                                       !- North Axis {deg}
   8,                                      !- Nominal Floor to Floor Height {m}
