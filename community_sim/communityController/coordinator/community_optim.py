@@ -16,9 +16,9 @@ class Coordinator():
         self.numBuildings = numBuildings
         self.nsteps = nsteps
 
-        self.reductionFactor = np.zeros((self.nsteps, self.numBuildings))
-        self.predictedLoad = np.zeros((self.nsteps, self.numBuildings))
-        self.predictedFlexibility = np.zeros((self.nsteps, self.numBuildings))
+        self.reductionFactor = np.zeros((self.numBuildings, self.nsteps))
+        self.predictedLoad = np.zeros((self.numBuildings, self.nsteps))
+        self.predictedFlexibility = np.zeros((self.numBuildings, self.nsteps))
         self.baseLoad = np.zeros((self.nsteps))
         self.countSinceChange = 0
 
@@ -29,6 +29,16 @@ class Coordinator():
 
         self.assessProb = AssessOptimization()
         self.adjustProb = AdjustOptimization(self.numBuildings, self.nsteps)
+
+    def AdjustInit(self, verbose=False):
+        '''
+        '''
+        paramDict = {}
+        paramDict['usagePenalty'] = np.zeros((self.numBuildings))
+        paramDict['dr_reduce'] = np.zeros((self.nsteps))
+        paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
+        paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 15
+        self.adjustProb.SolveProblem(paramDict, verbose=verbose)
     
     def TransformerOverload(self):
         '''
@@ -37,10 +47,10 @@ class Coordinator():
         self.overloadList = []
         overload = False
         for key, value in self.transInfo.items():
-            temp = value['rating'] <= self.predictedLoad[:,int(value['Buildings'][0]):int(value['Buildings'][-1])]
+            temp = self.predictedLoad[int(value['Buildings'][0]):int(value['Buildings'][-1]), :] - value['rating']
             self.overloadList.append(temp)
             # Check if overload occurs at any point
-            if np.any(temp):
+            if np.any(temp >= 0):
                 overload = True
 
         return overload
@@ -64,27 +74,35 @@ class Coordinator():
         return self.TransformerOverload() or self.DemandResponse()
 
 
-    def Adjust(self):
+    def Adjust(self, verbose=False):
         '''
         Adjust phase: Determine how a desired change in consumption will occur
         '''
-        pass
+        paramDict = {}
+        paramDict['usagePenalty'] = np.ones((self.numBuildings))
+        paramDict['dr_reduce'] = -1 * (np.sum(self.overloadList[0], axis=0) + np.sum(self.overloadList[1], axis=0))
+        paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
+        paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 100
+        self.adjustProb.SolveProblem(paramDict, verbose=verbose)
+        adjustValues = self.adjustProb.GetValues()
+        return adjustValues
 
-    def Dispatch(self):
+    def Dispatch(self, adjustValues):
         '''
         Dispatch phase: Format desired consumption changes as control signals to be provided to each house
         '''
-        self.countSinceChange += 1
-        if self.countSinceChange > 10:
-            self.reductionFactor[:10,:] = np.ones((10, self.numBuildings)) * np.random.randint(0, 2)
-            self.countSinceChange = 0
+        # self.countSinceChange += 1
+        # if self.countSinceChange > 10:
+        #     self.reductionFactor[:10,:] = np.ones((10, self.numBuildings)) * np.random.randint(0, 2)
+        #     self.countSinceChange = 0
+        self.reductionFactor = adjustValues['flexLoad'] / 100.0
 
     def Step(self):
         '''
         '''
         if self.Assess():
-            self.Adjust()
-            self.Dispatch()
+            adjustValues = self.Adjust()
+            self.Dispatch(adjustValues)
         
 
 class AssessOptimization(ConvexProblem):
@@ -132,7 +150,7 @@ class AdjustOptimization(ConvexProblem):
         # usageTime = cp.Parameter((numBuildings,n), name='usageTime')
         # price = cp.Parameter(n, name='price')
         usagePenalty = cp.Parameter(self.numBuildings, name='usagePenalty')
-        dr_reduce = cp.Parameter(name='dr_reduce')
+        dr_reduce = cp.Parameter(self.n, name='dr_reduce')
         W1 = 2
         W2 = 1
 
@@ -145,4 +163,14 @@ class AdjustOptimization(ConvexProblem):
         constraints.append(flexLoad >= flexMin)
         constraints.append(cp.sum(flexLoad, axis=0) >= dr_reduce)
 
-        self.adjustProb = cp.Problem(objective, constraints)
+        self.prob = cp.Problem(objective, constraints)
+
+        print("Is DPP?", self.prob.is_dcp(dpp=True))
+        print("Is DCP?", self.prob.is_dcp(dpp=False))
+
+    def GetValues(self):
+        '''
+        '''
+        values = {}
+        values['flexLoad'] = self.FindVariableByName('flexLoad').value
+        return values

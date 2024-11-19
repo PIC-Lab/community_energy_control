@@ -1,6 +1,7 @@
 import cvxpy as cp
+from abc import abstractmethod, ABC
 
-class ConvexProblem():
+class ConvexProblem(ABC):
     '''
     General class for working with convex optimization problems in cvxpy
     '''
@@ -23,6 +24,7 @@ class ConvexProblem():
         '''
         return [elem.name for elem in self.prob.parameters()]
 
+    @abstractmethod
     def DefineProblem(self):
         '''
         Define the convex optimization problem. Intended to be overloaded by a child class
@@ -32,15 +34,15 @@ class ConvexProblem():
     def SolveProblem(self, paramValues={}, verbose=False):
         '''
         Solves the optimization problem
-        Inputs:
-            paramValues: (dict{paramName: value}) values for problem parameters, defaults to an empty dict
-            verbose: (bool) defaults to false
+
+        :param paramValues: (dict{paramName: value}) values for problem parameters, defaults to an empty dict
+        :param verbose: (bool) defaults to false
         '''
-        for key, value in paramValues:
+        for key, value in paramValues.items():
             param = self.FindParameterByName(key)
             param.value = value
 
-        result = self.prob.solve(verbose=verbose)
+        result = self.prob.solve(verbose=verbose, solver=cp.CLARABEL)
         return result
 
     def FindVariableByName(self, name):

@@ -20,8 +20,8 @@ class CommunityController:
         self.flexibilityList = []
         self.trajectoryList = {}
 
-        self.predictedLoad = np.zeros((self.nsteps, len(controlAliasList)))
-        self.predictedFlex = np.zeros((self.nsteps, len(controlAliasList)))
+        self.predictedLoad = np.zeros((len(controlAliasList), self.nsteps))
+        self.predictedFlex = np.zeros((len(controlAliasList), self.nsteps))
 
         self.dirName = os.path.dirname(__file__)
 
@@ -33,6 +33,7 @@ class CommunityController:
         '''
         '''
         self.coordinator = Coordinator(len(self.controlAliasList), self.nsteps)
+        self.coordinator.AdjustInit()
 
     def ControllerInit(self):
         '''
@@ -76,9 +77,9 @@ class CommunityController:
         # Update controllers
         controlEvents = []
         for i, alias in enumerate(self.controlAliasList):
-            trajectories = self.controllerList[i].Step(sensorValues[alias], coordinateSignals[:,i], currentTime)
+            trajectories = self.controllerList[i].Step(sensorValues[alias], coordinateSignals[i,:], currentTime)
             self.trajectoryList[alias] = trajectories
-            self.predictedLoad[:, i] += trajectories['u'].detach().numpy()[0,:,0]
+            self.predictedLoad[i,:] += trajectories['u'].detach().numpy()[0,:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
         
         return controlEvents

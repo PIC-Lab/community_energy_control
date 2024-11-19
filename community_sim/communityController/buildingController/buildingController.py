@@ -29,7 +29,7 @@ class BuildingController:
             testCase: (str) name of test case being run, defaults to MPC
         """
         self.actuatorValues = {'heatingSetpoint': 18, 'coolingSetpoint': 24, 'battery': 0}
-        self.sensorValues = {'indoorAirTemp': 21, 'batterySOC': 8.4}
+        self.sensorValues = {'indoorAirTemp': 21, 'batterySOC': 8.2}
         self.buildingID = id
         self.devices = devices
 
@@ -52,7 +52,7 @@ class BuildingController:
                                    , usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
         self.weather.set_index(pd.to_datetime(self.weather['Time'], format="%Y-%m-%d %H:%M:%S"), inplace=True)
         self.weather.drop('Time', axis=1, inplace=True)
-        self.socSchedule = pd.read_csv(os.path.join(self.dirName, 'thermal_node_model/socSchedule.csv')).to_numpy()
+        self.socSchedule = pd.read_csv(os.path.join(self.dirName, 'thermal_node_model/socSchedule.csv')).to_numpy() * 16.4
 
         # Run additional setup functions
         self.LoadMPC()
