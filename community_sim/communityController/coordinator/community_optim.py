@@ -27,11 +27,18 @@ class Coordinator():
             self.transInfo = json.load(fp)
         self.overloadList = []
 
+        self.count = 0
+        self.stepFrequency = 5      # Coordinator updates values every 5 minutes
+
         self.assessProb = AssessOptimization()
         self.adjustProb = AdjustOptimization(self.numBuildings, self.nsteps)
 
     def AdjustInit(self, verbose=False):
         '''
+        First time run for adjust optimization with dummy parameter values. This ensures
+        future, real-time runs will not have to go through the problem formulation process
+
+        :param verbose: (bool) Should optimization solve be run with verbose output. For debugging purposes, defaults to False
         '''
         paramDict = {}
         paramDict['usagePenalty'] = np.zeros((self.numBuildings))
@@ -77,6 +84,8 @@ class Coordinator():
     def Adjust(self, verbose=False):
         '''
         Adjust phase: Determine how a desired change in consumption will occur
+
+        :param verbose: (bool) Should optimization solve be run with verbose output. For debugging purposes, defaults to False
         '''
         paramDict = {}
         paramDict['usagePenalty'] = np.ones((self.numBuildings))
@@ -91,18 +100,29 @@ class Coordinator():
         '''
         Dispatch phase: Format desired consumption changes as control signals to be provided to each house
         '''
-        # self.countSinceChange += 1
-        # if self.countSinceChange > 10:
-        #     self.reductionFactor[:10,:] = np.ones((10, self.numBuildings)) * np.random.randint(0, 2)
-        #     self.countSinceChange = 0
-        self.reductionFactor = adjustValues['flexLoad'] / 100.0
+        if not(adjustValues['flexLoad'] is None):
+            self.reductionFactor = adjustValues['flexLoad'] / 100.0
+        else:
+            print('Optimization infeasible')
+            self.reductionFactor = np.ones((self.numBuildings, self.nsteps))
 
     def Step(self):
         '''
+        Calls methods that should run every step
+
+        :return: (bool) whether or not the coordinator updated this step
         '''
+        self.count += 1
+
+        if self.count > self.stepFrequency:
+            self.count = 0
+            return False
+
         if self.Assess():
             adjustValues = self.Adjust()
             self.Dispatch(adjustValues)
+
+        return True
         
 
 class AssessOptimization(ConvexProblem):

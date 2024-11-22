@@ -108,19 +108,19 @@ def Main():
         # Controller model
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
-            'weights': {'dr_loss': 0.1, 'cost_loss': 2.0,
-                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 10.0, 'bat_max': 10.0},
+            'weights': {'dr_loss': 3.0, 'cost_loss': 3.0,
+                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 10.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
-            'hsizes': [200,200,200],
+            'hsizes': [200,200],
             'train_params': {
                 'max_epochs': 200,
                 'patience': 30,
                 'warmup': 50,
                 'lr': 0.001,
                 'nsteps': 60,
-                'batch_size': 10,
-                'n_samples': 500
+                'batch_size': 20,
+                'n_samples': 200
             }
         }
         # -----------------------------
