@@ -21,6 +21,7 @@ class Coordinator():
         self.predictedFlexibility = np.zeros((self.numBuildings, self.nsteps))
         self.baseLoad = np.zeros((self.nsteps))
         self.countSinceChange = 0
+        self.usagePenalty = np.zeros((self.numBuildings))
 
         self.dirName = os.path.dirname(__file__)
         with open(os.path.join(self.dirName, 'transInfo.json')) as fp:
@@ -88,7 +89,7 @@ class Coordinator():
         :param verbose: (bool) Should optimization solve be run with verbose output. For debugging purposes, defaults to False
         '''
         paramDict = {}
-        paramDict['usagePenalty'] = np.ones((self.numBuildings))
+        paramDict['usagePenalty'] = self.usagePenalty
         paramDict['dr_reduce'] = -1 * (np.sum(self.overloadList[0], axis=0) + np.sum(self.overloadList[1], axis=0))
         paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
         paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 100
@@ -113,10 +114,18 @@ class Coordinator():
         :return: (bool) whether or not the coordinator updated this step
         '''
         self.count += 1
-
-        if self.count > self.stepFrequency:
-            self.count = 0
+        # Coordinator updates coordination signals at set timescale, not every minute
+        if not(self.stepFrequency % self.count == 0):
+            # Move reduction factor by one step, repeat last value
+            updatedFactor = self.reductionFactor
+            updatedFactor[:-1] = self.reductionFactor[1:]
+            updatedFactor[-1] = self.reductionFactor[-1]
             return False
+            
+        self.count = 0
+
+        self.usagePenalty -= self.stepFrequency * 0.01
+        self.usagePenalty = np.clip(self.usagePenalty, a_min=0)
 
         if self.Assess():
             adjustValues = self.Adjust()

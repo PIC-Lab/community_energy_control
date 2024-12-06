@@ -19,6 +19,7 @@ class CommunityController:
         self.controllerList = []
         self.flexibilityList = []
         self.trajectoryList = {}
+        self.coordDebug = {}
 
         self.predictedLoad = np.zeros((len(controlAliasList), self.nsteps))
         self.predictedFlex = np.zeros((len(controlAliasList), self.nsteps))
@@ -79,6 +80,7 @@ class CommunityController:
         for i, alias in enumerate(self.controlAliasList):
             trajectories = self.controllerList[i].Step(sensorValues[alias], coordinateSignals[i,:], currentTime)
             self.trajectoryList[alias] = trajectories
+            self.coordDebug[alias]['usagePenalty'] = self.coordinator.usagePenalty[i]
             self.predictedLoad[i,:] += trajectories['u'].detach().numpy()[0,:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
         

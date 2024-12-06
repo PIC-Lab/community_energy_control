@@ -70,6 +70,7 @@ controller = CommunityController(aliasesSensorIdx)
 # ----- Primary co-simulation loop -----
 # Define lists for data collection
 outputs = {alias: [] for alias in aliasesSensorIdx}
+coord_out = {alias: [] for alias in aliasesSensorIdx}
 
 # Execute federate and start co-sim
 first = True
@@ -142,7 +143,14 @@ for step, current_time in enumerate(times):
         controlTraj['stored'] = controller.trajectoryList[alias]['stored'][0,0,0].detach().item()
         controlTraj['u_bat'] = controller.trajectoryList[alias]['u_bat'][0,0,0].detach().item()
         controlTraj['bat_ref'] = controller.trajectoryList[alias]['batRef'][0,0,0].detach().item()
+        controlTraj['hvacPower'] = controller.trajectoryList[alias]['hvacPower'][0,0,0].detach().item()
+        controlTraj['batPower'] = controller.trajectoryList[alias]['batPower'][0,0,0].detach().item()
         outputs[alias].append(controlTraj)
+
+        coordDict = {}
+        coordDict['Time'] = current_time
+        coordDict['usagePenalty'] = controller.coordDebug[alias]['usagePenalty']
+        coord_out[alias]
 
     logger.debug("Publishing values to other federates")
     h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
