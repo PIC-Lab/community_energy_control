@@ -631,7 +631,7 @@ class ControllerSystem(NeuromancerModel):
 
         batModel = Node(BatteryModel(eff=0.95, capacity=self.batSize, nx=1, nu=1), ['stored', 'u_bat'], ['stored'], name='batModel', groupName='Battery')
 
-        batTruePower = Node(batCorrect(), ['stored'], ['batPower'], name='batTruePower', groupName='Battery')
+        batTruePower = Node(batCorrect(self.batSize), ['stored', 'u_bat'], ['batPower'], name='batTruePower', groupName='Battery')
         # batTruePower = Node(lambda x: torch.gradient(x), ['stored'], ['batPower'], name='batTruePower', groupName='Battery')
 
         # Freeze thermal model
@@ -678,10 +678,19 @@ class ControllerSystem(NeuromancerModel):
         # objectives
         # u_tot = u + u_bat
         u_tot = hvacPower + batPower
+        u_tot.name = 'u_tot'
 
         dr_loss = (dr * u_tot).minimize(weight=self.weights['dr_loss'], name='dr_loss')
         cost_loss = (cost * u_tot).minimize(weight=self.weights['cost_loss'], name='cost_loss')
         delta_loss = (u_tot[1:]-u_tot[:-1]).minimize(weight=self.weights['delta_loss'], name='delta_loss')
+
+        hvac_loss = u == self.weights['hvac_loss'] * torch.zeros([self.batch_size, self.nsteps, 1])
+        # hvac_cost_loss = hvacPower.minimize(weight=1.0, name='hvac_cost_loss')
+        bat_loss = u_bat == self.weights['bat_loss'] * torch.zeros([self.batch_size, self.nsteps, 1])
+        # bat_loss = u_bat.minimize(metric=torch.max, weight=self.weights['bat_loss'], name='bat_loss')
+        # bat_cost_loss = batPower.minimize(weight=3.0, name='bat_cost_loss')
+        u_tot_loss = torch.abs(u_tot).minimize(weight=1.0, metric=torch.max, name='u_tot_max')
+
 
         # thermal comfort constraints
         state_lower_bound_penalty = self.weights['x_min'] * (y > ymin)
@@ -695,7 +704,8 @@ class ControllerSystem(NeuromancerModel):
         bat_life_lower_bound_penalty.name = 'bat_life_min'
 
         # list of constraints and objectives
-        objectives = [dr_loss, cost_loss, delta_loss]
+        # objectives = [hvac_cost_loss, hvac_loss, bat_cost_loss, bat_loss]
+        objectives = [u_tot_loss, dr_loss, cost_loss, delta_loss, hvac_loss, bat_loss]
         constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty]
 
         # Problem construction
@@ -872,10 +882,11 @@ class ControllerSystem(NeuromancerModel):
 
         numPlots = 3
         fig, ax = plt.subplots(numPlots, figsize=(16,16))
-        ax[0].plot(trajectories['u_tot'].detach().cpu().reshape(nsteps_test+1, self.ny), linewidth=3)
+        ax[0].plot(trajectories['batPower'].detach().cpu().reshape(nsteps_test+1, self.ny) + 
+                   trajectories['hvacPower'].detach().cpu().reshape(nsteps_test+1, self.ny), linewidth=3)
         ax[0].set_ylabel('power [kW]', fontsize=26)
         # ax[0].set(ylim=[10,30])
-        ax[1].plot(trajectories['d'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[1].plot(trajectories['d'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3)
         ax[1].set_ylabel('d', fontsize=26)
         ax[2].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3, label='dr')
         ax[2].plot(trajectories['cost'].detach().cpu().reshape(nsteps_test+1, 1), linewidth=3, label='cost')
@@ -1025,17 +1036,20 @@ class BatteryModel(nn.Module):
         return x
     
 class batCorrect(nn.Module):
-    def __init__(self):
+    def __init__(self, capacity):
         super().__init__()
-        self.xPrev = 0
+        self.capacity = capacity
 
-    def forward(self, x):
-        assert len(x.shape) == 2
+    def forward(self, stored, u_bat):
+        assert len(stored.shape) == 2
+        assert len(u_bat.shape) == 2
 
-        if x.shape[0] == 1:
-            return torch.zeros_like(x)
-        else:   
-            return torch.gradient(x, dim=0)
+        return torch.where((stored >= self.capacity) | (stored <= self.capacity*0.2), torch.zeros_like(u_bat), u_bat)
+
+        # if x.shape[0] == 1:
+        #     return torch.ones_like(x)
+        # else:   
+        #     return torch.gradient(x, dim=0)
 
         # if x.shape[0] == 1:
         #     deltaX = (x - self.xPrev) * 60 * 1/0.95

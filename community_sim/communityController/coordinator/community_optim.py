@@ -125,7 +125,7 @@ class Coordinator():
         self.count = 0
 
         self.usagePenalty -= self.stepFrequency * 0.01
-        self.usagePenalty = np.clip(self.usagePenalty, a_min=0)
+        self.usagePenalty = np.clip(self.usagePenalty, a_min=0, a_max=100)
 
         if self.Assess():
             adjustValues = self.Adjust()
