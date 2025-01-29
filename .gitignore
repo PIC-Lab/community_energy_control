@@ -164,6 +164,7 @@ cython_debug/
 
 # Community sim generated files
 community_sim/results/
+community_sim/alf_schedules/
 community_sim/34BusSystem/
 community_sim/34BusSystem.zip
 

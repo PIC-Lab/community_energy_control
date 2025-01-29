@@ -22,6 +22,7 @@ class Coordinator():
         self.baseLoad = np.zeros((self.nsteps))
         self.countSinceChange = 0
         self.usagePenalty = np.zeros((self.numBuildings))
+        self.adjustValues = {'flexLoad': np.zeros((self.numBuildings, self.nsteps))}
 
         self.dirName = os.path.dirname(__file__)
         with open(os.path.join(self.dirName, 'transInfo.json')) as fp:
@@ -128,8 +129,8 @@ class Coordinator():
         self.usagePenalty = np.clip(self.usagePenalty, a_min=0, a_max=100)
 
         if self.Assess():
-            adjustValues = self.Adjust()
-            self.Dispatch(adjustValues)
+            self.adjustValues = self.Adjust()
+            self.Dispatch(self.adjustValues)
 
         return True
         

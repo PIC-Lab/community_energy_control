@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as patheffects
 from pathlib import Path
 import imageio
 import os
@@ -18,7 +19,7 @@ import json
 
 import neuromancer.psl as psl
 from neuromancer.system import Node, System
-from neuromancer.modules import blocks
+from neuromancer.modules import blocks, solvers
 from neuromancer.dataset import DictDataset
 from neuromancer.constraint import variable
 from neuromancer.loss import PenaltyLoss
@@ -165,6 +166,205 @@ class NeuromancerModel(ABC):
         plt.close(fig)
 
 class BuildingNode(NeuromancerModel):
+    def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
+        '''
+        Constructor function
+
+        :param nx: (int) number of states
+        :param nu: (int) number of control signals
+        :param nd: (int) number of disturbances
+        :param manager (RunManager) object that keeps track of various model parameters
+        :param name: (str) name of the model
+        :param device: (torch.device) device to run training on
+        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
+        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
+        '''
+        super().__init__(manager, name, device, debugLevel, saveDir)
+
+        self.nx = nx
+        self.nu = nu
+        self.nd = nd
+
+        self.hsizes = self.manager.models[name]['hsizes']
+
+        self.callback = Callback_NODE(debugLevel, self.saveDir)
+
+    def PrepareDataset(self, dataset):
+        '''
+        Prepare data for training and testing of building thermal model
+
+        :param dataset: (dict) normalized dataset split into states (X), inputs (U), and disturbances (D)
+
+        :return trainLoader: (DataLoader) DataLoader object for training
+        :return devLoader: (DataLoader) DataLoader object for validation
+        :return testData: (dict) Batched dataset designated for testing
+        '''
+        n = len(dataset['X'])
+
+        train = {}
+        train['X'] = dataset['X'][:int(np.round(n*0.7)),:]
+        train['U'] = dataset['U'][:int(np.round(n*0.7)),:]
+        train['D'] = dataset['D'][:int(np.round(n*0.7)),:]
+
+        dev = {}
+        dev['X'] = dataset['X'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
+        dev['U'] = dataset['U'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
+        dev['D'] = dataset['D'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
+
+        test = {}
+        test['X'] = dataset['X'][int(np.round(n*0.9)):,:]
+        test['U'] = dataset['U'][int(np.round(n*0.9)):,:]
+        test['D'] = dataset['D'][int(np.round(n*0.9)):,:]
+
+        nbatch = len(test['X']) // self.nsteps
+
+        trainX = train['X'].reshape(nbatch*7, self.nsteps, self.nx)
+        trainX = torch.tensor(trainX, dtype=torch.float32, device=self.device)
+        trainU = train['U'].reshape(nbatch*7, self.nsteps, self.nu)
+        trainU = torch.tensor(trainU, dtype=torch.float32, device=self.device)
+        trainD = train['D'].reshape(nbatch*7, self.nsteps, self.nd)
+        trainD = torch.tensor(trainD, dtype=torch.float32, device=self.device)
+        trainData = DictDataset({'x': trainX, 'xn': trainX[:,0:1,:],
+                                'u': trainU, 'd': trainD}, name='train')
+        # for key, value in trainData.datadict.items():
+        #     print(key, value.shape)
+        trainLoader = DataLoader(trainData, batch_size=self.batch_size,
+                                collate_fn=trainData.collate_fn, shuffle=False)
+        
+        devX = dev['X'].reshape(nbatch*2, self.nsteps, self.nx)
+        devX = torch.tensor(devX, dtype=torch.float32, device=self.device)
+        devU = dev['U'].reshape(nbatch*2, self.nsteps, self.nu)
+        devU = torch.tensor(devU, dtype=torch.float32, device=self.device)
+        devD = dev['D'].reshape(nbatch*2, self.nsteps, self.nd)
+        devD = torch.tensor(devD, dtype=torch.float32, device=self.device)
+        devData = DictDataset({'x': devX, 'xn': devX[:,0:1,:],
+                                'u': devU, 'd': devD}, name='dev')
+        # for key, value in devData.datadict.items():
+        #     print(key, value.shape)
+        devLoader = DataLoader(devData, batch_size=self.batch_size,
+                                collate_fn=devData.collate_fn, shuffle=True)
+        
+        testX = test['X'].reshape(nbatch, self.nsteps, self.nx)
+        testX = torch.tensor(testX, dtype=torch.float32, device=self.device)
+        testU = test['U'].reshape(nbatch, self.nsteps, self.nu)
+        # testU[:,:,1] = np.zeros_like(testU[:,:,1])
+        # testU[:,:,0] = np.zeros_like(testU[:,:,0])
+        testU = torch.tensor(testU, dtype=torch.float32, device=self.device)
+        testD = test['D'].reshape(nbatch, self.nsteps, self.nd)
+        testD = torch.tensor(testD, dtype=torch.float32, device=self.device)
+        testData = {'x': testX, 'xn': testX[:,0:1,:], 'u': testU, 'd':testD}
+        # for key, value in testData.items():
+        #     print(key, value.shape)
+
+        return trainLoader, devLoader, testData
+
+    def CreateModel(self):
+        '''Defines building thermal system'''
+        fx = blocks.MLP(self.nx+self.nu+self.nd, self.nx, bias=True, linear_map=torch.nn.Linear,
+                        nonlin=torch.nn.Sigmoid, hsizes=self.hsizes)
+    
+        fxRK4 = integrators.RK4(fx)
+
+        model = Node(fxRK4, ['xn', 'u', 'd'], ['xn'], name="buildingNODE")
+
+        C = torch.tensor([[1.0]], device=self.device)
+        ynext = lambda x: x @ C.T
+        output_model = Node(ynext, ['xn'], ['y'], name='out_obs')
+
+        dynamics_model = System([model, output_model], name='system', nsteps=self.nsteps)
+        self.model = dynamics_model
+        dynamics_model.to(device=self.device)
+        if self.callback.debugLevel > DebugLevel.NO:
+            dynamics_model.show(self.manager.runPath+'thermalModelDiagram.png')
+
+        x = variable("x")
+        xhat = variable('xn')[:, :-1, :]
+
+        referenceLoss = 5.*(xhat == x)^2
+        referenceLoss.name = 'ref_loss'
+
+        onestepLoss = 1.*(xhat[:,1,:] == x[:,1,:])^2
+        onestepLoss.name = 'onestep_loss'
+
+        objectives = [referenceLoss, onestepLoss]
+        constraints = []
+
+        loss = PenaltyLoss(objectives, constraints)
+
+        self.problem = Problem([dynamics_model], loss)
+        if self.callback.debugLevel > DebugLevel.NO:
+            self.problem.show(self.manager.runPath+'NODE_optim.png')
+
+    def TestModel(self):
+        '''Plots the testing of the building thermal model'''
+        dynamics_model = self.problem.nodes[0]
+        dynamics_model.nsteps = self.testData['x'].shape[1]
+
+        testOutputs = dynamics_model(self.testData)
+
+        pred_traj = testOutputs['xn'][:,:-1,:].detach().cpu().numpy().reshape(-1,self.nx)
+        true_traj = self.testData['x'].detach().cpu().numpy().reshape(-1,self.nx)
+        input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
+        dist_traj = self.testData['d'].detach().cpu().numpy().reshape(-1,self.nd)
+        pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
+
+        testMetrics = pd.DataFrame()
+        test_mae = np.mean(np.abs(pred_traj - true_traj))
+        testMetrics['mae'] = [test_mae]
+        testMetrics.to_csv(self.saveDir+'/test_metrics.csv', index=False)
+
+        figsize = 25
+        lw = 4.0
+        fig,ax = plt.subplots(self.nx+self.nu+self.nd, figsize=(figsize, figsize))
+        labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
+            axe = ax[row]
+            axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
+            axe.plot(t1, 'c', linewidth=lw, label="True")
+            axe.plot(t2, 'm--', linewidth=lw, label='Pred')
+            axe.tick_params(labelbottom=False, labelsize=figsize)
+            axe.set_title("Indoor Air Temperature (Normalized)", fontsize=figsize)
+            # axe.set_xlim([2000,2400])
+            # axe.vlines(np.linspace(30, 270, 9), 0, 1)
+        axe.tick_params(labelbottom=True, labelsize=figsize)
+        axe.legend(fontsize=figsize)
+        ax[-2].plot(dist_traj, 'c', linewidth=lw, label='Outdoor Air Temp')
+        ax[-2].legend(fontsize=figsize)
+        ax[-2].set_title("Outdoor Air Temperature (Normalized)", fontsize=figsize)
+        ax[-2].tick_params(labelbottom=True, labelsize=figsize)
+        # ax[-2].set_xlim([2000,2400])
+        ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
+        ax[-1].legend(fontsize=figsize)
+        ax[-1].set_xlabel('$time$', fontsize=figsize)
+        ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
+        ax[-1].tick_params(labelbottom=True, labelsize=figsize)
+        ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
+        # ax[-1].set_xlim([2000,2400])
+        plt.figtext(0.01, 0.01, self.runName, fontsize=figsize)
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/building_rollout', dpi=fig.dpi)
+        plt.close(fig)
+
+        lw = 2.0
+        fs = 12
+        fig,ax = plt.subplots(self.nx, figsize=(7, 5))
+        labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        for row, (t1, t2) in enumerate(zip(true_traj, pred_traj)):
+            ax.plot(t1, 'c', linewidth=lw, label="True")
+            ax.plot(t2, 'm--', linewidth=lw, label='Pred')
+        ax.tick_params(labelbottom=False, labelsize=fs)
+        ax.set_ylabel('Indoor Air Temperature (Normalized)', rotation=0, labelpad=20, fontsize=fs)
+        ax.tick_params(labelbottom=True, labelsize=fs)
+        # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
+        ax.legend(fontsize=fs)
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
+        plt.close(fig)
+
+        # Plot training and validation loss
+        self.PlotLoss()
+
+class ExperimentalThermalModel(NeuromancerModel):
     def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
         '''
         Constructor function
@@ -676,7 +876,7 @@ class ControllerSystem(NeuromancerModel):
         batPower = variable('batPower')
 
         # objectives
-        # u_tot = u + u_bat
+        # u_tot = u_bat
         u_tot = hvacPower + batPower
         u_tot.name = 'u_tot'
 
@@ -687,6 +887,7 @@ class ControllerSystem(NeuromancerModel):
         hvac_loss = u == self.weights['hvac_loss'] * torch.zeros([self.batch_size, self.nsteps, 1])
         # hvac_cost_loss = hvacPower.minimize(weight=1.0, name='hvac_cost_loss')
         bat_loss = u_bat == self.weights['bat_loss'] * torch.zeros([self.batch_size, self.nsteps, 1])
+        bat_max_loss = torch.abs(u_bat).minimize(weight=self.weights['bat_max_loss'], metric=torch.max, name='bat_max_loss')
         # bat_loss = u_bat.minimize(metric=torch.max, weight=self.weights['bat_loss'], name='bat_loss')
         # bat_cost_loss = batPower.minimize(weight=3.0, name='bat_cost_loss')
         u_tot_loss = torch.abs(u_tot).minimize(weight=1.0, metric=torch.max, name='u_tot_max')
@@ -695,6 +896,12 @@ class ControllerSystem(NeuromancerModel):
         # thermal comfort constraints
         state_lower_bound_penalty = self.weights['x_min'] * (y > ymin)
         state_upper_bound_penalty = self.weights['x_max'] * (y < ymax)
+        # hvac_lower = 1.0 * (u > 0.0)
+        # hvac_upper = 1.0 * (u < 1.0)
+        # bat_lower = 1.0 * (u_bat > -10)
+        # bat_upper = 1.0 * (u_bat < 10)
+
+        # batEqCon = y == batModel(stored, u_bat)
 
         bat_life_lower_bound_penalty = self.weights['bat_min'] * (stored > batRef)
 
@@ -705,12 +912,22 @@ class ControllerSystem(NeuromancerModel):
 
         # list of constraints and objectives
         # objectives = [hvac_cost_loss, hvac_loss, bat_cost_loss, bat_loss]
-        objectives = [u_tot_loss, dr_loss, cost_loss, delta_loss, hvac_loss, bat_loss]
+        objectives = [u_tot_loss, dr_loss, cost_loss, delta_loss, hvac_loss, bat_loss, bat_max_loss]
         constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty]
+        # constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_lower, bat_upper]
+
+        # proj = solvers.GradientProjection(constraints=[bat_life_lower_bound_penalty, bat_lower, bat_upper],
+        #                                   input_keys=["stored", "u_bat"],
+        #                                   num_steps=10,
+        #                                   step_size=10,
+        #                                   decay=0.1,
+        #                                   name='proj')
 
         # Problem construction
+        # nodes = [self.system, proj]
         nodes = [self.system]
         loss = PenaltyLoss(objectives, constraints)
+        # self.problem = Problem(nodes, loss, grad_inference=True)
         self.problem = Problem(nodes, loss)
         if self.callback.debugLevel > DebugLevel.NO:
             self.problem.show(self.manager.runPath+"MPC_optim.png")
@@ -925,6 +1142,62 @@ class ControllerSystem(NeuromancerModel):
         plt.tight_layout()
         plt.savefig(self.saveDir+'/simplified_rollout', dpi=fig.dpi)
         plt.close(fig)
+
+        # Gradient descent plotting
+        # x1 = np.arange(0, 15, 0.5)
+        # y1 = np.arange(-10, 10, 0.5)
+        # xx, yy = np.meshgrid(x1, y1)
+
+        # eval objective and constraints
+        # J = np.mean(data['dr'][:,0,:] * yy) + np.mean(data['cost'][:,0,:] * yy) + np.mean(yy[1:]-yy[:-1])
+        # c1 = yy + 10
+        # c2 = 10 - yy
+        # c3 = self.weights['bat_min'] * (xx - data['batRef'][:,0,:])
+
+        # fig, ax = plt.subplots(2, 1)
+        # # cp = ax.contourf(xx, yy, J,
+        # #                 levels=[0, 0.05, 0.2, 0.5, 1.0, 2.0, 4.0, 6.0, 8.0],
+        # #                 alpha=0.6)
+        # # fig.colorbar(cp)
+        # # ax.set_title('Battery EMS')
+        # # cg1 = ax.contour(xx, yy, c1, [0], colors='mediumblue', alpha=0.7)
+        # # plt.setp(cg1.collections,
+        # #         path_effects=[patheffects.withTickedStroke()], alpha=0.7)
+        # # cg2 = ax.contour(xx, yy, c2, [0], colors='mediumblue', alpha=0.7)
+        # # plt.setp(cg2.collections,
+        # #         path_effects=[patheffects.withTickedStroke()], alpha=0.7)
+        # # cg3 = ax.contour(xx, yy, c3, [0], colors='mediumblue', alpha=0.7)
+        # # plt.setp(cg3.collections,
+        # #         path_effects=[patheffects.withTickedStroke()], alpha=0.7)
+
+        # # Solution to pNLP via Neuromancer
+        # data['name'] = 'test'
+        # model_out = self.problem(data)
+        # x_nm = model_out['test_' + "stored"].detach().numpy()
+        # y_nm = model_out['test_' + "u_bat"].detach().numpy()
+
+        # # intermediate projection steps
+        # sol_map = self.problem.nodes[0]
+        # proj = self.problem.nodes[1]
+        # num_steps = proj.num_steps
+        # x_proj = sol_map(data)
+        # proj.num_steps = 1    # set projections steps to 1 for visualisation
+        # X_projected = [np.concatenate([x_proj['stored'][:,:60,:].detach().numpy(), x_proj['u_bat'].detach().numpy()],axis=2)]
+        # for steps in range(num_steps):
+        #     proj_inputs = {**data, **x_proj}
+        #     x_proj = proj(proj_inputs)
+        #     X_projected.append(np.concatenate([x_proj['stored'][:,:60,:].detach().numpy(), x_proj['u_bat'].detach().numpy()], axis=2))
+        # projected_steps = np.concatenate(X_projected, axis=0)
+        # print(projected_steps.shape)
+
+        # # plot optimal solutions CasADi vs Neuromancer
+        # ax[0].plot(x_nm[0,:,0], label='NeuroMANCER')
+        # # plot projected steps
+        # ax[1].plot(y_nm[0,:,0], label='NeuroMANCER')
+        # for i in range(projected_steps.shape[0]):
+        #     ax[0].plot(projected_steps[i,:, 0], label='projection steps')
+        #     ax[1].plot(projected_steps[i,:, 1], label='projection steps')
+        # plt.savefig(self.saveDir+'/grad_proj', dpi = fig.dpi)
 
         # Plot training and validation loss
         self.PlotLoss()

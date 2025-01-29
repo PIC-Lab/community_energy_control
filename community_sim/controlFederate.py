@@ -150,7 +150,8 @@ for step, current_time in enumerate(times):
         coordDict = {}
         coordDict['Time'] = current_time
         coordDict['usagePenalty'] = controller.coordDebug[alias]['usagePenalty']
-        coord_out[alias]
+        coordDict['flexLoad'] = controller.coordDebug[alias]['flexLoad']
+        coord_out[alias].append(coordDict)
 
     logger.debug("Publishing values to other federates")
     h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
@@ -166,10 +167,19 @@ for key, building in outputs.items():
     # df['PredStored'] = np.pad(predictedTraj[key], (0,len(df) - len(predictedTraj[key])))
     outputs_df.append(df)
 
+coord_df = []
+for key, building in coord_out.items():
+    df = pd.DataFrame(building)
+    col = df.pop('Time')
+    df.insert(0, col.name, col)
+    coord_df.append(df)
+
 # Save data to csv
 aggregateLoad = np.zeros(len(outputs_df[0]))
 for i, building in enumerate(outputs_df):
     building.to_csv('results/'+simParams['controlledAliases'][i]+'_control.csv', index=False)
+for i, building in enumerate(coord_df):
+    building.to_csv('results/'+simParams['controlledAliases'][i]+'_coord.csv', index=False)
 
 # finalize and close the federate
 h.helicsFederateDestroy(fed)

@@ -108,9 +108,9 @@ def Main():
         # Controller model
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
-            'weights': {'dr_loss': 4.0, 'cost_loss': 5.0, 'delta_loss': 1.0,
-                        'hvac_loss': 0.5, 'bat_loss': 2.0,
-                        'x_min': 30.0, 'x_max': 30.0, 'bat_min': 10.0},
+            'weights': {'dr_loss': 6.0, 'cost_loss': 5.0, 'delta_loss': 1.0,
+                        'hvac_loss': 0.5, 'bat_loss': 2.0, 'bat_max_loss': 0.7,
+                        'x_min': 40.0, 'x_max': 40.0, 'bat_min': 15.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
             'hsizes': [200,200],

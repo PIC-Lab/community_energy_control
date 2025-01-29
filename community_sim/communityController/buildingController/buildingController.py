@@ -87,7 +87,9 @@ class BuildingController:
                             'cost': torch.tensor(BuildingController.TOUPricing(currentTime, self.nsteps)[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'stored': torch.tensor(np.array([self.sensorValues['batterySOC']])[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'batRef': torch.tensor(self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')[np.newaxis,:], dtype=torch.float32),
-                            'batMax': torch.tensor(np.ones((1,self.nsteps+1,1))*8.0, dtype=torch.float32)}
+                            'batMax': torch.tensor(np.ones((1,self.nsteps+1,1))*8.0, dtype=torch.float32),
+                            'hvacPower': torch.zeros(self.stateData.shape),
+                            'batPower': torch.zeros(self.stateData.shape)}
         
         self.horizonData = self.norm.norm(self.horizonData, keys=['y', 'y', 'y', 'y', 'd', 'leave', 'p', 'leave', 'leave', 'leave'])
 

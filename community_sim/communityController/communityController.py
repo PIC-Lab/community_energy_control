@@ -80,7 +80,9 @@ class CommunityController:
         for i, alias in enumerate(self.controlAliasList):
             trajectories = self.controllerList[i].Step(sensorValues[alias], coordinateSignals[i,:], currentTime)
             self.trajectoryList[alias] = trajectories
+            self.coordDebug[alias] = {}
             self.coordDebug[alias]['usagePenalty'] = self.coordinator.usagePenalty[i]
+            self.coordDebug[alias]['flexLoad'] = self.coordinator.adjustValues['flexLoad'][i,:]
             self.predictedLoad[i,:] += trajectories['u'].detach().numpy()[0,:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
         
