@@ -120,80 +120,83 @@ outputs = {alias: [] for alias in aliases}
 # Execute federate and start co-sim
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
-for step, current_time in enumerate(times):
-    # Update time in co-simulation
-    present_step = (current_time - start_time).total_seconds()
-    h.helicsFederateRequestTime(fed, present_step)
+try:
+    for step, current_time in enumerate(times):
+        # Update time in co-simulation
+        present_step = (current_time - start_time).total_seconds()
+        h.helicsFederateRequestTime(fed, present_step)
 
-    # get signals from other federate
-    logger.debug(f"Current time: {current_time}, step: {step}")
-    isupdated = h.helicsInputIsUpdated(subid['control_events'])
-    if isupdated == 1:
-        controlEvents = h.helicsInputGetString(subid['control_events'])
-        controlEvents = json.loads(controlEvents)
-        logger.debug("Recieved updated value for control_events")
-        logger.debug(controlEvents)
-    else:
-        controlEvents = {}
-            
-    # Get building electricity consumption
-    loadPowers = {}
-    indoorTemp = {}
-    for i,alias in enumerate(aliases):
-        site = ac.get_alias(alias)
-        alf_outs = ac.get_outputs(site)
-        alf_outs['Time'] = ac.get_sim_time(site)
+        # get signals from other federate
+        logger.debug(f"Current time: {current_time}, step: {step}")
+        isupdated = h.helicsInputIsUpdated(subid['control_events'])
+        if isupdated == 1:
+            controlEvents = h.helicsInputGetString(subid['control_events'])
+            controlEvents = json.loads(controlEvents)
+            logger.debug("Recieved updated value for control_events")
+            logger.debug(controlEvents)
+        else:
+            controlEvents = {}
+                
+        # Get building electricity consumption
+        loadPowers = {}
+        indoorTemp = {}
+        for i,alias in enumerate(aliases):
+            site = ac.get_alias(alias)
+            alf_outs = ac.get_outputs(site)
+            alf_outs['Time'] = ac.get_sim_time(site)
 
-        # Push to control federates
-        # for key,value in controlInMap.items():
-        #     controllerList[i].sensorValues[key] = alf_outs[value]
+            # Push to control federates
+            # for key,value in controlInMap.items():
+            #     controllerList[i].sensorValues[key] = alf_outs[value]
 
-        # if simParams['testCase'] == 'base':
-        #     controllerList[i].HVAC_Control(forceMode=-1)
-        # elif simParams['testCase'] == 'MPC':
-        #     trajectories = controllerList[i].PredictiveControl(step)
+            # if simParams['testCase'] == 'base':
+            #     controllerList[i].HVAC_Control(forceMode=-1)
+            # elif simParams['testCase'] == 'MPC':
+            #     trajectories = controllerList[i].PredictiveControl(step)
 
-        # Parse control events
-        for controlSet in controlEvents:
-            location = controlSet['location']
-            input_dicts[location] = {}
-            for key, value in controlSet['devices'].items():
-                if 'Battery' in key:
-                    continue
-                input_dicts[location][key] = value
-        # for alias, controlSet in controlEvents.items():
-        #     location = controlSet['location']
-        #     for key, value in controlSet['devices']:
-        #         if key == 'Battery':
-        #             continue
-        #         input_dicts[alias][value] = controlSet['status']
+            # Parse control events
+            for controlSet in controlEvents:
+                location = controlSet['location']
+                input_dicts[location] = {}
+                for key, value in controlSet['devices'].items():
+                    if 'Battery' in key:
+                        continue
+                    input_dicts[location][key] = value
+            # for alias, controlSet in controlEvents.items():
+            #     location = controlSet['location']
+            #     for key, value in controlSet['devices']:
+            #         if key == 'Battery':
+            #             continue
+            #         input_dicts[alias][value] = controlSet['status']
 
-        # Push updates to inputs to alfalfa
-        ac.set_inputs(site, input_dicts[alias])
+            # Push updates to inputs to alfalfa
+            ac.set_inputs(site, input_dicts[alias])
 
-        # Should probably move this to the measures
-        alf_outs['Whole Building Electricity'] *= 1e-3      # convert to kW
-        alf_outs['Heating:Electricity'] *= 1e-3 / 60
-        # alf_outs['Cooling:Electricity'] *= 1e-3 / 60
-        alf_outs['WaterSystems:Electricity'] *= 1e-3 / 60
-        alf_outs['Electricity:HVAC'] *= 1e-3 / 60
-        outputs[alias].append(alf_outs)
+            # Should probably move this to the measures
+            alf_outs['Whole Building Electricity'] *= 1e-3      # convert to kW
+            alf_outs['Heating:Electricity'] *= 1e-3 / 60
+            # alf_outs['Cooling:Electricity'] *= 1e-3 / 60
+            alf_outs['WaterSystems:Electricity'] *= 1e-3 / 60
+            alf_outs['Electricity:HVAC'] *= 1e-3 / 60
+            outputs[alias].append(alf_outs)
 
-        loadPowers[alias] = alf_outs['Whole Building Electricity']
-        indoorTemp[alias] = alf_outs['living space Air Temperature']
+            loadPowers[alias] = alf_outs['Whole Building Electricity']
+            indoorTemp[alias] = alf_outs['living space Air Temperature']
 
-    # Publish values
-    logger.debug("Publishing values to other federates")
-    h.helicsPublicationPublishString(pubid['load_powers'], json.dumps(loadPowers))
-    h.helicsPublicationPublishString(pubid['indoor_temp'], json.dumps(indoorTemp))
+        # Publish values
+        logger.debug("Publishing values to other federates")
+        h.helicsPublicationPublishString(pubid['load_powers'], json.dumps(loadPowers))
+        h.helicsPublicationPublishString(pubid['indoor_temp'], json.dumps(indoorTemp))
 
-    logger.debug(loadPowers)
-    logger.debug(indoorTemp)
+        logger.debug(loadPowers)
+        logger.debug(indoorTemp)
 
-    # Advance the model
-    if step < duration / stepsize:          # Don't advance alfalfa on the last iteration of the loop
-        ac.advance(site_ids)
-        logger.debug(f"Model advanced to time: {ac.get_sim_time(site_ids[0])}")
+        # Advance the model
+        if step < duration / stepsize:          # Don't advance alfalfa on the last iteration of the loop
+            ac.advance(site_ids)
+            logger.debug(f"Model advanced to time: {ac.get_sim_time(site_ids[0])}")
+except KeyboardInterrupt:
+    print('Keyboard interrupt received. Stopping simulation and saving current data.')
 
 # Stop the simulation
 ac.stop(site_ids)

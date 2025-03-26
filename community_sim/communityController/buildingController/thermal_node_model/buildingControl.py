@@ -3,12 +3,15 @@ import numpy as np
 import pandas as pd
 import shutil
 import json
-import gc
+import resource
 
 import runManager
-from modelConstructor import *
+from modelConstructor_projGrad import *
 
 def Main():
+    # Setting memory limits
+    resource.setrlimit(resource.RLIMIT_AS, (int(200 * 1e9), int(250 * 1e9)))
+
     # torch.manual_seed(0)
     # If cuda is available, run on GPU
     if torch.cuda.is_available():
@@ -46,8 +49,11 @@ def Main():
         for key in manager.models.keys():
             if key.find('buildingThermal') != -1:
                 thermalModelName = key
+                expModelName = key
             elif key.find('classifier') != -1:
                 classifierModelName = key
+            elif key.find('setpoint') != -1:
+                setpointName = key
             elif key.find('controller') != -1:
                 controllerModelName = key
             else:
@@ -80,19 +86,45 @@ def Main():
         # Building thermal model
         thermalModelName = "buildingThermal"
         manager.models[thermalModelName] = {
-            'hsizes': [200,200,200],
+            'hsizes': [200,200],
             'train_params': {
                 'max_epochs': 1000,
                 'patience': 50,
                 'warmup': 100,
-                'lr': 0.0001,
+                'lr': 0.001,
                 'nsteps': 60,
-                'batch_size': 50
+                'batch_size': 30
             }
         }
 
+        # expModelName = "experimental buildingThermal"
+        # manager.models[expModelName] = {
+        #     'hsizes': [200,200],
+        #     'train_params': {
+        #         'max_epochs': 1000,
+        #         'patience': 50,
+        #         'warmup': 100,
+        #         'lr': 0.0005,
+        #         'nsteps': 60,
+        #         'batch_size': 50
+        #     }
+        # }
+
         # Classifier model
         classifierModelName = "classifier"
+        manager.models[classifierModelName] = {
+            'hsizes': [64],
+            'train_params': {
+                'max_epochs': 500,
+                'patience': 50,
+                'warmup': 100,
+                'lr': 0.001,
+                'nsteps': 30,
+                'batch_size': 10
+            }
+        }
+
+        setpointName = "setpoint"
         manager.models[classifierModelName] = {
             'hsizes': [64],
             'train_params': {
@@ -110,7 +142,7 @@ def Main():
         manager.models[controllerModelName] = {
             'weights': {'dr_loss': 6.0, 'cost_loss': 5.0, 'delta_loss': 1.0,
                         'hvac_loss': 0.5, 'bat_loss': 2.0, 'bat_max_loss': 0.7,
-                        'x_min': 40.0, 'x_max': 40.0, 'bat_min': 15.0},
+                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 15.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
             'hsizes': [200,200],
@@ -156,6 +188,7 @@ def Main():
 
         # ----- Set dataset parameters -----
         manager.dataset['path'] = '../../../results/summer/'
+        # manager.dataset['path'] = 'Saved Figures/SF_HP.csv'
         manager.dataset['sliceBool'] = True
         manager.dataset['slice_idx'] = [0, 57600]
         # ----------------------------------
@@ -172,6 +205,8 @@ def Main():
     for file in buildingModels.iterdir():
         if (file / 'workflow.osw').exists() and (file.name in simParams['controlledAliases']):
             buildings.append(file.name)
+
+    buildings = ['4']
 
     # ------------ Train classifier ------------
     tempList = []
@@ -199,6 +234,21 @@ def Main():
 
     classifier.TestModel()
 
+    # setpointData = {}
+
+    # setpoint = SetpointPredictor(nu=setpointData['M'].shape[1],
+    #                                 nu=setpointData['U'].shape[1],
+    #                                 manager=manager,
+    #                                 name=setpointName,
+    #                                 device=device,
+    #                                 debugLevel = DebugLevel.EPOCH_LOSS,
+    #                                 saveDir=f"{manager.runPath+setpointName}")
+    # setpoint.CreateModel()
+
+    # setpoint.TrainModel(setpointData, loadClass)
+
+    # setpoint.TestModel()
+
     manager.models["classifier"]["init_params"] = {'nm': classifier.nm, 'nu': classifier.nu}
     # ------------------------------------------
 
@@ -212,23 +262,29 @@ def Main():
     while(i < len(buildings)):
         building = buildings[i]
         print(f"Training models for building {building}, round {count}")
-        alfData = pd.read_csv(manager.dataset['path']+f'{building}_out.csv', usecols=['Time', 'living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature'], nrows=57600)
+        alfData = pd.read_csv(manager.dataset['path']+f'{building}_out.csv', usecols=['Time', 'living space Air Temperature', 'cooling setpoint', 'Electricity:HVAC', 'Site Outdoor Air Temperature'], nrows=57600)
         dates = pd.to_datetime(alfData['Time'], format='%Y-%m-%d %H:%M:%S')
         alfData['Price'] = dates.apply(lambda x: TOUPricing(x, timeSteps=1440))
 
         if manager.dataset['sliceBool']:
-            raw_dataset = alfData.loc[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1], ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
+            raw_dataset = alfData.iloc[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1]].loc[:,['living space Air Temperature', 'cooling setpoint', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
         else:
-            raw_dataset = alfData.loc[:, ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
+            raw_dataset = alfData.loc[:, ['living space Air Temperature', 'cooling setpoint', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
+
+        # upData = pd.DataFrame(index=dates, columns=raw_dataset.columns, data=raw_dataset.to_numpy())
+        
+        # upData = upData.reindex(index=upsampleDates)
+        # upData.interpolate(inplace=True)
+        # raw_dataset = upData
 
         print(raw_dataset.describe())
 
         norm = Normalizer()
         norm.add_data(raw_dataset)
-        norm.add_data(raw_dataset, keys=['y', 'u', 'd', 'p'])
+        norm.add_data(raw_dataset, keys=['y', 'u', 'x', 'd', 'p'])
         norm.dataInfo['p']['min'] = 0
         norm.save(f"{manager.runPath}norm/{building}/")
-        dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'd', 'p'])
+        dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'x', 'd', 'p'])
 
         print(dataset_norm.describe())
 
@@ -237,6 +293,12 @@ def Main():
         dataset['U'] = dataset_norm['Electricity:HVAC'].to_numpy()[:, np.newaxis]
         dataset['D'] = dataset_norm['Site Outdoor Air Temperature'].to_numpy()[:, np.newaxis]
         dataset['I'] = dataset_norm['Price'].to_numpy()[:,np.newaxis]
+
+        # dataset = {}
+        # dataset['X'] = np.stack([dataset_norm['living space Air Temperature'].to_numpy(), dataset_norm['Electricity:HVAC'].to_numpy()], axis=1)
+        # dataset['U'] = dataset_norm['cooling setpoint'].to_numpy()[:, np.newaxis]
+        # dataset['D'] = dataset_norm['Site Outdoor Air Temperature'].to_numpy()[:, np.newaxis]
+        # dataset['I'] = dataset_norm['Price'].to_numpy()[:,np.newaxis]
 
         # Bounds on indoor temperature
         tempMin = torch.tensor(norm.norm(manager.tempBounds[0], keys=['y'])).to(device=device)
@@ -252,6 +314,14 @@ def Main():
                                     device=device,
                                     debugLevel = DebugLevel.EPOCH_VALUES,
                                     saveDir=f"{manager.runPath+thermalModelName}/{building}")
+            # buildingThermal = ExperimentalThermalModel(nx=dataset['X'].shape[1],
+            #                         nu=dataset['U'].shape[1],
+            #                         nd=dataset['D'].shape[1],
+            #                         manager=manager,
+            #                         name=expModelName,
+            #                         device=device,
+            #                         debugLevel = DebugLevel.EPOCH_VALUES,
+            #                         saveDir=f"{manager.runPath+expModelName}/{building}")
             buildingThermal.CreateModel()
 
             buildingThermal.TrainModel(dataset, loadThermal)
@@ -320,8 +390,6 @@ def Main():
             print(f"Finished with building {i+1}, moving to next building")
             shutil.copytree(f"{controlSystem.saveDir}/best", controlSystem.saveDir, dirs_exist_ok=True)
             shutil.rmtree(f"{controlSystem.saveDir}/best")
-            # Manually invoking garbage collection because the training loop seems to steadily accumulate used memory, which shouldn't be happening
-            gc.collect()
             i += 1
             count = 0
             bestLoss = 1e5

@@ -76,86 +76,89 @@ coord_out = {alias: [] for alias in aliasesSensorIdx}
 first = True
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
-for step, current_time in enumerate(times):
-    # Update time in co-simulation
-    present_step = (current_time - start_time).total_seconds()
-    present_step += 1
-    h.helicsFederateRequestTime(fed, present_step)
+try:
+    for step, current_time in enumerate(times):
+        # Update time in co-simulation
+        present_step = (current_time - start_time).total_seconds()
+        present_step += 1
+        h.helicsFederateRequestTime(fed, present_step)
 
-    # get signals from other federate
-    logger.debug(f"Current time: {current_time}, step: {step}")
-    isupdated = h.helicsInputIsUpdated(subid['battery_soc'])
-    if isupdated == 1:
-        batterySOC = h.helicsInputGetString(subid['battery_soc'])
-        batterySOC = json.loads(batterySOC)
-        logger.debug("Recieved updated value for battery_soc")
-        logger.debug(batterySOC)
-    else:
-        batterySOC = {}
+        # get signals from other federate
+        logger.debug(f"Current time: {current_time}, step: {step}")
+        isupdated = h.helicsInputIsUpdated(subid['battery_soc'])
+        if isupdated == 1:
+            batterySOC = h.helicsInputGetString(subid['battery_soc'])
+            batterySOC = json.loads(batterySOC)
+            logger.debug("Recieved updated value for battery_soc")
+            logger.debug(batterySOC)
+        else:
+            batterySOC = {}
 
-    isupdated = h.helicsInputIsUpdated(subid['indoor_temp'])
-    if isupdated == 1:
-        indoorTemp = h.helicsInputGetString(subid['indoor_temp'])
-        indoorTemp = json.loads(indoorTemp)
-        logger.debug("Recieved updated value for indoor_temp")
-        logger.debug(indoorTemp)
-    else:
-        indoorTemp = {}
-    
-    sensorValues = {alias: {} for alias in aliasesSensorIdx}
-    for key, value in batterySOC.items():
-        try:
-            sensorValues[simIdxMapping[key[key.index('y')+1:]]]['batterySOC'] = value
-        except KeyError:
-            logger.debug(f"No matching key found for {key}")
-    for key, value in indoorTemp.items():
-        if key in simParams['controlledAliases']:
-            sensorValues[simIdxMapping[key]]['indoorAirTemp'] = value
+        isupdated = h.helicsInputIsUpdated(subid['indoor_temp'])
+        if isupdated == 1:
+            indoorTemp = h.helicsInputGetString(subid['indoor_temp'])
+            indoorTemp = json.loads(indoorTemp)
+            logger.debug("Recieved updated value for indoor_temp")
+            logger.debug(indoorTemp)
+        else:
+            indoorTemp = {}
+        
+        sensorValues = {alias: {} for alias in aliasesSensorIdx}
+        for key, value in batterySOC.items():
+            try:
+                sensorValues[simIdxMapping[key[key.index('y')+1:]]]['batterySOC'] = value
+            except KeyError:
+                logger.debug(f"No matching key found for {key}")
+        for key, value in indoorTemp.items():
+            if key in simParams['controlledAliases']:
+                sensorValues[simIdxMapping[key]]['indoorAirTemp'] = value
 
-    logger.debug(sensorValues)
+        logger.debug(sensorValues)
 
-    controlEvents = controller.Step(sensorValues, current_time)
+        controlEvents = controller.Step(sensorValues, current_time)
 
-    # Map actuator values to control event format
-    input_dicts = []
-    for event in controlEvents:
-        tempDict = {}
-        tempDict['location'] = sensorIdxMapping[event['location']]
-        tempDict['devices'] = {}
-        for key,value in controlOutMap.items():
-            tempDict['devices'][value] = event['devices'][key]
-        input_dicts.append(tempDict)
+        # Map actuator values to control event format
+        input_dicts = []
+        for event in controlEvents:
+            tempDict = {}
+            tempDict['location'] = sensorIdxMapping[event['location']]
+            tempDict['devices'] = {}
+            for key,value in controlOutMap.items():
+                tempDict['devices'][value] = event['devices'][key]
+            input_dicts.append(tempDict)
 
-    for alias in aliasesSensorIdx:
-        if first:
-            predictedTraj = {}
-            predictedTraj[alias] = controller.trajectoryList[alias]['stored'][0,:,0].detach().numpy()
-            first = False
+        for alias in aliasesSensorIdx:
+            if first:
+                predictedTraj = {}
+                predictedTraj[alias] = controller.trajectoryList[alias]['stored'][0,:,0].detach().numpy()
+                first = False
 
-        controlTraj = {}
-        controlTraj['Time'] = current_time
-        controlTraj['Control Effort'] = controller.trajectoryList[alias]['u'][0,0,0].detach().item()
-        controlTraj['Predicted Temperature'] = controller.trajectoryList[alias]['y'][0,0,0].detach().item()
-        controlTraj['Ymax'] = controller.trajectoryList[alias]['ymax'][0,0,0].detach().item()
-        controlTraj['Ymin'] = controller.trajectoryList[alias]['ymin'][0,0,0].detach().item()
-        controlTraj['dr'] = controller.trajectoryList[alias]['dr'][0,0,0].detach().item()
-        controlTraj['cost'] = controller.trajectoryList[alias]['cost'][0,0,0].detach().item()
-        controlTraj['stored'] = controller.trajectoryList[alias]['stored'][0,0,0].detach().item()
-        controlTraj['u_bat'] = controller.trajectoryList[alias]['u_bat'][0,0,0].detach().item()
-        controlTraj['bat_ref'] = controller.trajectoryList[alias]['batRef'][0,0,0].detach().item()
-        controlTraj['hvacPower'] = controller.trajectoryList[alias]['hvacPower'][0,0,0].detach().item()
-        controlTraj['batPower'] = controller.trajectoryList[alias]['batPower'][0,0,0].detach().item()
-        outputs[alias].append(controlTraj)
+            controlTraj = {}
+            controlTraj['Time'] = current_time
+            controlTraj['Control Effort'] = controller.trajectoryList[alias]['u'][0,0,0].detach().item()
+            controlTraj['Predicted Temperature'] = controller.trajectoryList[alias]['y'][0,0,0].detach().item()
+            controlTraj['Ymax'] = controller.trajectoryList[alias]['ymax'][0,0,0].detach().item()
+            controlTraj['Ymin'] = controller.trajectoryList[alias]['ymin'][0,0,0].detach().item()
+            controlTraj['dr'] = controller.trajectoryList[alias]['dr'][0,0,0].detach().item()
+            controlTraj['cost'] = controller.trajectoryList[alias]['cost'][0,0,0].detach().item()
+            controlTraj['stored'] = controller.trajectoryList[alias]['stored'][0,0,0].detach().item()
+            controlTraj['u_bat'] = controller.trajectoryList[alias]['u_bat'][0,0,0].detach().item()
+            controlTraj['bat_ref'] = controller.trajectoryList[alias]['batRef'][0,0,0].detach().item()
+            controlTraj['hvacPower'] = controller.trajectoryList[alias]['hvacPower'][0,0,0].detach().item()
+            controlTraj['batPower'] = controller.trajectoryList[alias]['batPower'][0,0,0].detach().item()
+            outputs[alias].append(controlTraj)
 
-        coordDict = {}
-        coordDict['Time'] = current_time
-        coordDict['usagePenalty'] = controller.coordDebug[alias]['usagePenalty']
-        coordDict['flexLoad'] = controller.coordDebug[alias]['flexLoad']
-        coord_out[alias].append(coordDict)
+            coordDict = {}
+            coordDict['Time'] = current_time
+            coordDict['usagePenalty'] = controller.coordDebug[alias]['usagePenalty']
+            coordDict['flexLoad'] = controller.coordDebug[alias]['flexLoad']
+            coord_out[alias].append(coordDict)
 
-    logger.debug("Publishing values to other federates")
-    h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
-    logger.debug(input_dicts)
+        logger.debug("Publishing values to other federates")
+        h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
+        logger.debug(input_dicts)
+except KeyboardInterrupt:
+    print('Keyboard interrupt received. Stopping simulation and saving current data.')
 
 # Put output lists in dataframes
 outputs_df = []

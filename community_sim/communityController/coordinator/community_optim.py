@@ -13,21 +13,23 @@ class Coordinator():
         '''
         Constructor
         '''
+        self.dirName = os.path.dirname(__file__)
+        with open(os.path.join(self.dirName, 'transInfo.json')) as fp:
+            self.transInfo = json.load(fp)
+
         self.numBuildings = numBuildings
         self.nsteps = nsteps
 
         self.reductionFactor = np.zeros((self.numBuildings, self.nsteps))
         self.predictedLoad = np.zeros((self.numBuildings, self.nsteps))
         self.predictedFlexibility = np.zeros((self.numBuildings, self.nsteps))
-        self.baseLoad = np.zeros((self.nsteps))
+        self.baseLoad = np.zeros((len(self.transInfo.keys()), self.nsteps))
         self.countSinceChange = 0
         self.usagePenalty = np.zeros((self.numBuildings))
         self.adjustValues = {'flexLoad': np.zeros((self.numBuildings, self.nsteps))}
 
-        self.dirName = os.path.dirname(__file__)
-        with open(os.path.join(self.dirName, 'transInfo.json')) as fp:
-            self.transInfo = json.load(fp)
         self.overloadList = []
+        self.predictedTransLoad = np.zeros((len(self.transInfo.keys()), self.nsteps))
 
         self.count = 0
         self.stepFrequency = 5      # Coordinator updates values every 5 minutes
@@ -55,12 +57,14 @@ class Coordinator():
         '''
         self.overloadList = []
         overload = False
+        i = 0
         for key, value in self.transInfo.items():
-            temp = self.predictedLoad[int(value['Buildings'][0]):int(value['Buildings'][-1]), :] - value['rating']
-            self.overloadList.append(temp)
+            self.predictedTransLoad[i,:] = np.sum(self.predictedLoad[int(value['Buildings'][0]):int(value['Buildings'][-1]), :], axis=0)
+            self.overloadList.append(self.predTransLoad[i,:] - value['rating'])
             # Check if overload occurs at any point
-            if np.any(temp >= 0):
+            if np.any(self.predTransLoad[i,:] >= 0):
                 overload = True
+            i += 1
 
         return overload
 
@@ -107,6 +111,7 @@ class Coordinator():
         else:
             print('Optimization infeasible')
             self.reductionFactor = np.ones((self.numBuildings, self.nsteps))
+            self.adjustValues['flexLoad'] = np.zeros((self.numBuildings, self.nsteps))
 
     def Step(self):
         '''

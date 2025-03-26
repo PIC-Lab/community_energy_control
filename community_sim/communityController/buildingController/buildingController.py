@@ -21,7 +21,7 @@ class BuildingController:
         pv: (ndarray[float]) predicted PV generation
         dist: (ndarray[float]) predicted disturbances (outdoor temperature)
     """
-    def __init__(self, id, devices):
+    def __init__(self, id, devices, train=False):
         """
         Constructor
         Parameters:
@@ -44,18 +44,21 @@ class BuildingController:
         self.cl_system = None
 
         # Load building specific parameters
-        self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 1}      # Default value, should be commented out
+        self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 0.5}      # Default value, should be commented out
         # Temporary, needs to be fixed later
         self.setpointSchedule = pd.read_csv(os.path.join(self.dirName, '../../setpointSchedule.csv')
                                             , header=None).to_numpy()[np.newaxis, :]
-        self.weather = pd.read_csv(os.path.join(self.dirName, '../../results/summer/1_out.csv')
+        # self.weather = pd.read_csv(os.path.join(self.dirName, '../../results/summer/1_out.csv')
+        #                            , usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
+        self.weather = pd.read_csv(os.path.join(self.dirName, '../../results/2024_weather.csv')
                                    , usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
         self.weather.set_index(pd.to_datetime(self.weather['Time'], format="%Y-%m-%d %H:%M:%S"), inplace=True)
         self.weather.drop('Time', axis=1, inplace=True)
         self.socSchedule = pd.read_csv(os.path.join(self.dirName, 'thermal_node_model/socSchedule.csv')).to_numpy() * 16.4
 
         # Run additional setup functions
-        self.LoadMPC()
+        if not(train):
+            self.LoadMPC()
         self.count = 0
         self.HVAC_lock = 0
         self.HVAC_prevMode = 0
@@ -119,6 +122,17 @@ class BuildingController:
         return trajectories
 
     # Control functions
+    def RandomControl(self):
+        if self.HVAC_lock:
+            self.count += 1
+            if self.count > 30:
+                self.count = 0
+                self.HVAC_lock = 0
+        else:
+                self.actuatorValues['heatingSetpoint'] = 0
+                self.actuatorValues['coolingSetpoint'] = np.random.randint(18, 23)
+                self.HVAC_lock = 1
+
     def PredictiveControl(self):
         '''
         Run predictive control for the prediction horizon

@@ -1,7 +1,6 @@
 [
   {
     "house_id": "1",
-    "address": "14A Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "SXA2306A05B50C8B95EE87B4",
@@ -145,7 +144,6 @@
   },
   {
     "house_id": "2",
-    "address": "10A Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "SXA2306A05B50C8B95EFE320",
@@ -271,7 +269,6 @@
   },
   {
     "house_id": "3",
-    "address": "8A Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2307A05B50C8B95F0CE68",
@@ -397,7 +394,6 @@
   },
   {
     "house_id": "4",
-    "address": "6A Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2305A05B5EC6260C86180",
@@ -475,7 +471,6 @@
   },
   {
     "house_id": "5",
-    "address": "2A Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "B2245B0204483fda2a251e",
@@ -511,7 +506,6 @@
   },
   {
     "house_id": "6",
-    "address": "1A Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2306A05B5EC6260C92F6C",
@@ -619,7 +613,6 @@
   },
   {
     "house_id": "7",
-    "address": "2 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2307A05B5B8D61A2D3914",
@@ -721,7 +714,6 @@
   },
   {
     "house_id": "8",
-    "address": "7 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2307A05B50C8B95F0E4D8",
@@ -805,7 +797,6 @@
   },
   {
     "house_id": "9",
-    "address": "10 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2307A05B50C8B95EF9420",
@@ -961,7 +952,6 @@
   },
   {
     "house_id": "10",
-    "address": "17 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2307A05B50C8B95EF402C",
@@ -1075,7 +1065,6 @@
   },
   {
     "house_id": "11",
-    "address": "18 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2307A05B5EC6260C94ED8",
@@ -1207,7 +1196,6 @@
   },
   {
     "house_id": "12",
-    "address": "21 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "B0000B0204a4e57cbb83b2",
@@ -1249,7 +1237,6 @@
   },
   {
     "house_id": "13",
-    "address": "23 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2307A05B5C4DEE2306EA0",
@@ -1291,7 +1278,6 @@
   },
   {
     "house_id": "14",
-    "address": "26 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2306A05B5EC6260C93D9C",
@@ -1405,7 +1391,6 @@
   },
   {
     "house_id": "15",
-    "address": "14 Arrow Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2305A05B5EC6260CA716C",
@@ -1531,7 +1516,6 @@
   },
   {
     "house_id": "16",
-    "address": "211 E Monroe St #5 Leadville, CO 80461",
     "devices": [
       {
         "device_id": "A2317A05B50C8B95CADB1C",
@@ -1615,7 +1599,6 @@
   },
   {
     "house_id": "17",
-    "address": "211 E Monroe St #9 Leadville, CO 80461",
     "devices": [
       {
         "device_id": "194427",
@@ -1627,7 +1610,6 @@
   },
   {
     "house_id": "18",
-    "address": "506 E 9th St Leadville, CO 80461",
     "devices": [
       {
         "device_id": "B2245B0204483fda29c329",

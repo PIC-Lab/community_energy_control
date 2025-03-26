@@ -6,13 +6,13 @@ from pathlib import Path
 import numpy as np
 import traceback
 
-from buildingController import BuildingController
+from communityController.buildingController.buildingController import BuildingController
 
 # Controller name maps
 controlInMap = { 'indoorAirTemp': 'living space Air Temperature'}
 controlOutMap = {'heatingSetpoint': 'heating setpoint', 'coolingSetpoint': 'cooling setpoint'}
 
-resultsDir = Path('results/summer')
+resultsDir = Path('results/summerExp')
 
 def Main():
     # Create results folder if it doesn't exist
@@ -95,7 +95,7 @@ def RunAlfalfa(start_time, duration, first):
     # Create controller object
     controllerList = []
     for alias in aliases:
-        controllerList.append(BuildingController(alias, testCase='train'))
+        controllerList.append(BuildingController(alias, None, train=True))
 
     # -----Execute Federate, set up and start co-simulation-----
     outputs = {alias: [] for alias in aliases}
@@ -118,7 +118,8 @@ def RunAlfalfa(start_time, duration, first):
             controllerList[i].setpointInfo['coolSP'] = randSP['coolSP'].loc[step]
             controllerList[i].setpointInfo['deadband'] = randSP['db'].loc[step]
 
-            controllerList[i].HVAC_Control(forceMode=-1, op_mode=randAvail['avail'].loc[step])
+            # controllerList[i].HVAC_Control(forceMode=-1, op_mode=randAvail['avail'].loc[step])
+            controllerList[i].RandomControl()
 
             for key,value in controlOutMap.items():
                 input_dicts[alias][value] = controllerList[i].actuatorValues[key]

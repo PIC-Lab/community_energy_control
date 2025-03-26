@@ -22,7 +22,7 @@ from neuromancer.system import Node, System
 from neuromancer.modules import blocks, solvers
 from neuromancer.dataset import DictDataset
 from neuromancer.constraint import variable
-from neuromancer.loss import PenaltyLoss
+from neuromancer.loss import PenaltyLoss, BarrierLoss
 from neuromancer.problem import Problem
 from neuromancer.trainer import Trainer
 from neuromancer.dynamics import integrators
@@ -324,7 +324,7 @@ class BuildingNode(NeuromancerModel):
             axe.plot(t2, 'm--', linewidth=lw, label='Pred')
             axe.tick_params(labelbottom=False, labelsize=figsize)
             axe.set_title("Indoor Air Temperature (Normalized)", fontsize=figsize)
-            # axe.set_xlim([2000,2400])
+            # axe.set_xlim([0,60])
             # axe.vlines(np.linspace(30, 270, 9), 0, 1)
         axe.tick_params(labelbottom=True, labelsize=figsize)
         axe.legend(fontsize=figsize)
@@ -332,14 +332,14 @@ class BuildingNode(NeuromancerModel):
         ax[-2].legend(fontsize=figsize)
         ax[-2].set_title("Outdoor Air Temperature (Normalized)", fontsize=figsize)
         ax[-2].tick_params(labelbottom=True, labelsize=figsize)
-        # ax[-2].set_xlim([2000,2400])
+        # ax[-2].set_xlim([0,60])
         ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
         ax[-1].legend(fontsize=figsize)
         ax[-1].set_xlabel('$time$', fontsize=figsize)
         ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
         ax[-1].tick_params(labelbottom=True, labelsize=figsize)
         ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
-        # ax[-1].set_xlim([2000,2400])
+        # ax[-1].set_xlim([0,60])
         plt.figtext(0.01, 0.01, self.runName, fontsize=figsize)
         plt.tight_layout()
         fig.savefig(self.saveDir+'/building_rollout', dpi=fig.dpi)
@@ -360,6 +360,47 @@ class BuildingNode(NeuromancerModel):
         plt.tight_layout()
         fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
         plt.close(fig)
+
+        # No updated conditions
+        # dynamics_model.nsteps = 60
+        # testOutputs = dynamics_model(self.testData[0:1,:,:])
+
+        # pred_traj = testOutputs['xn'][:,:-1,:].detach().cpu().numpy().reshape(-1,self.nx)
+        # true_traj = self.testData['x'].detach().cpu().numpy().reshape(-1,self.nx)
+        # input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
+        # dist_traj = self.testData['d'].detach().cpu().numpy().reshape(-1,self.nd)
+        # pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
+        
+        # figsize = 25
+        # lw = 4.0
+        # fig,ax = plt.subplots(self.nx+self.nu+self.nd, figsize=(figsize, figsize))
+        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        # for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
+        #     axe = ax[row]
+        #     axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
+        #     axe.plot(t1, 'c', linewidth=lw, label="True")
+        #     axe.plot(t2, 'm--', linewidth=lw, label='Pred')
+        #     axe.tick_params(labelbottom=False, labelsize=figsize)
+        #     axe.set_title("Indoor Air Temperature (Normalized)", fontsize=figsize)
+        #     axe.set_xlim([0,60])
+        # axe.tick_params(labelbottom=True, labelsize=figsize)
+        # axe.legend(fontsize=figsize)
+        # ax[-2].plot(dist_traj, 'c', linewidth=lw, label='Outdoor Air Temp')
+        # ax[-2].legend(fontsize=figsize)
+        # ax[-2].set_title("Outdoor Air Temperature (Normalized)", fontsize=figsize)
+        # ax[-2].tick_params(labelbottom=True, labelsize=figsize)
+        # ax[-2].set_xlim([0,60])
+        # ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
+        # ax[-1].legend(fontsize=figsize)
+        # ax[-1].set_xlabel('$time$', fontsize=figsize)
+        # ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
+        # ax[-1].tick_params(labelbottom=True, labelsize=figsize)
+        # ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
+        # ax[-1].set_xlim([0,60])
+        # plt.figtext(0.01, 0.01, self.runName, fontsize=figsize)
+        # plt.tight_layout()
+        # fig.savefig(self.saveDir+'/building_rollout_short', dpi=fig.dpi)
+        # plt.close(fig)
 
         # Plot training and validation loss
         self.PlotLoss()
@@ -466,7 +507,7 @@ class ExperimentalThermalModel(NeuromancerModel):
 
         model = Node(fxRK4, ['xn', 'u', 'd'], ['xn'], name="buildingNODE")
 
-        C = torch.tensor([[1.0]], device=self.device)
+        C = torch.tensor([[1.0, 0.0]], device=self.device)
         ynext = lambda x: x @ C.T
         output_model = Node(ynext, ['xn'], ['y'], name='out_obs')
 
@@ -523,7 +564,7 @@ class ExperimentalThermalModel(NeuromancerModel):
             axe.plot(t2, 'm--', linewidth=lw, label='Pred')
             axe.tick_params(labelbottom=False, labelsize=figsize)
             axe.set_title("Indoor Air Temperature (Normalized)", fontsize=figsize)
-            # axe.set_xlim([2000,2400])
+            axe.set_xlim([0,60])
             # axe.vlines(np.linspace(30, 270, 9), 0, 1)
         axe.tick_params(labelbottom=True, labelsize=figsize)
         axe.legend(fontsize=figsize)
@@ -531,14 +572,14 @@ class ExperimentalThermalModel(NeuromancerModel):
         ax[-2].legend(fontsize=figsize)
         ax[-2].set_title("Outdoor Air Temperature (Normalized)", fontsize=figsize)
         ax[-2].tick_params(labelbottom=True, labelsize=figsize)
-        # ax[-2].set_xlim([2000,2400])
+        ax[-2].set_xlim([0,60])
         ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
         ax[-1].legend(fontsize=figsize)
         ax[-1].set_xlabel('$time$', fontsize=figsize)
         ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
         ax[-1].tick_params(labelbottom=True, labelsize=figsize)
         ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
-        # ax[-1].set_xlim([2000,2400])
+        ax[-1].set_xlim([0,60])
         plt.figtext(0.01, 0.01, self.runName, fontsize=figsize)
         plt.tight_layout()
         fig.savefig(self.saveDir+'/building_rollout', dpi=fig.dpi)
@@ -548,16 +589,183 @@ class ExperimentalThermalModel(NeuromancerModel):
         fs = 12
         fig,ax = plt.subplots(self.nx, figsize=(7, 5))
         labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        for row, (t1, t2) in enumerate(zip(true_traj, pred_traj)):
-            ax.plot(t1, 'c', linewidth=lw, label="True")
-            ax.plot(t2, 'm--', linewidth=lw, label='Pred')
-        ax.tick_params(labelbottom=False, labelsize=fs)
-        ax.set_ylabel('Indoor Air Temperature (Normalized)', rotation=0, labelpad=20, fontsize=fs)
-        ax.tick_params(labelbottom=True, labelsize=fs)
+        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
+            ax[row].plot(t1, 'c', linewidth=lw, label="True")
+            ax[row].plot(t2, 'm--', linewidth=lw, label='Pred')
+            ax[row].tick_params(labelbottom=False, labelsize=fs)
+            ax[row].set_ylabel(label, rotation=0, labelpad=20, fontsize=fs)
+            ax[row].tick_params(labelbottom=True, labelsize=fs)
         # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
-        ax.legend(fontsize=fs)
+            ax[row].legend(fontsize=fs)
         plt.tight_layout()
         fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
+        plt.close(fig)
+
+        # Plot training and validation loss
+        self.PlotLoss()
+
+class SetpointPredictor(NeuromancerModel):
+    def __init__(self, ns:int, nu:int, ny:int, manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
+        '''
+        Constructor function
+
+        :param nm: (int) number of hvac modes
+        :param nu: (int) number of control signals
+        :param manager (RunManager) object that keeps track of various model parameters
+        :param name: (str) name of the model
+        :param device: (torch.device) device to run training on
+        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
+        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
+        '''
+        super().__init__(manager, name, device, debugLevel, saveDir)
+
+        self.ns = ns
+        self.nu = nu
+        self.ny = ny
+
+        self.hsizes = self.manager.models[name]['hsizes']
+
+    def PrepareDataset(self, dataset):
+        '''
+        Prepare dataset for training
+        '''
+        n = len(dataset['S'])
+
+        train = {}
+        train['S'] = dataset['S'][:int(np.round(n*0.7)),:]
+        train['U'] = dataset['U'][:int(np.round(n*0.7)),:]
+        train['Y'] = dataset['Y'][:int(np.round(n*0.7)),:]
+
+        dev = {}
+        dev['S'] = dataset['S'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
+        dev['U'] = dataset['U'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
+        dev['Y'] = dataset['Y'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
+
+        test = {}
+        test['S'] = dataset['S'][int(np.round(n*0.9)):,:]
+        test['U'] = dataset['U'][int(np.round(n*0.9)):,:]
+        test['Y'] = dataset['Y'][int(np.round(n*0.9)):,:]
+
+        nbatch = len(test['S']) // self.nsteps
+
+        trainM = train['S'].reshape(nbatch*7, self.nsteps, self.ns)
+        trainM = torch.tensor(trainM, dtype=torch.float32, device=self.device)
+        trainU = train['U'].reshape(nbatch*7, self.nsteps, self.nu)
+        trainU = torch.tensor(trainU, dtype=torch.float32, device=self.device)
+        trainY = train['Y'].reshape(nbatch*7, self.nsteps, self.ny)
+        trainY = torch.tensor(trainY, dtype=torch.float32, device=self.device)
+        trainData = DictDataset({'s': trainM, 'u': trainU, 'y': trainY}, name='train')
+        trainLoader = DataLoader(trainData, batch_size=self.batch_size,
+                                collate_fn=trainData.collate_fn, shuffle=True)
+        
+        devM = dev['S'].reshape(nbatch*2, self.nsteps, self.ns)
+        devM = torch.tensor(devM, dtype=torch.float32, device=self.device)
+        devU = dev['U'].reshape(nbatch*2, self.nsteps, self.nu)
+        devU = torch.tensor(devU, dtype=torch.float32, device=self.device)
+        devY = dev['Y'].reshape(nbatch*2, self.nsteps, self.ny)
+        devY = torch.tensor(devY, dtype=torch.float32, device=self.device)
+        devData = DictDataset({'s': devM, 'u': devU, 'y': devY}, name='dev')
+        devLoader = DataLoader(devData, batch_size=self.batch_size,
+                                collate_fn=devData.collate_fn, shuffle=True)
+        
+        testM = test['S'].reshape(nbatch, self.nsteps, self.ns)
+        testM = torch.tensor(testM, dtype=torch.float32, device=self.device)
+        testU = test['U'].reshape(nbatch, self.nsteps, self.nu)
+        testU = torch.tensor(testU, dtype=torch.float32, device=self.device)
+        testY = test['Y'].reshape(nbatch, self.nsteps, self.ny)
+        testY = torch.tensor(testY, dtype=torch.float32, device=self.device)
+        testData = {'s': testM, 'u': testU, 'y': testY}
+
+        return trainLoader, devLoader, testData
+
+    def CreateModel(self):
+        '''Defines HVAC mode classifier'''
+        net = blocks.MLP_bounds(
+            insize=self.nu,
+            outsize=self.nm,
+            hsizes=self.hsizes,
+            nonlin=nn.Sigmoid
+        )
+        self.model = Node(net, ['u', 'y'], ['setpoint'], name='Setpoint')
+
+        system = System([self.model], name='System', nsteps=self.nsteps)
+        system.to(device=self.device)
+
+        s = variable("s")
+        sHat = variable('setpoint')
+
+        referenceLoss = 5.*(sHat == s)^2
+        referenceLoss.name = 'ref_loss'
+
+        onestepLoss = 1.*(sHat[:,1,:] == s[:,1,:])^2
+        onestepLoss.name = 'onestep_loss'
+
+        objectives = [referenceLoss, onestepLoss]
+        constraints = []
+
+        loss = PenaltyLoss(objectives, constraints)
+
+        self.problem = Problem([system], loss)
+
+    def TestModel(self):
+        '''
+        Create plots from test data
+        '''
+        dynamics_model = self.problem.nodes[0]
+        dynamics_model.nsteps = self.testData['m'].shape[1]
+
+        testOutputs = dynamics_model(self.testData)
+
+        pred_traj = testOutputs['setpoint'].detach().cpu().numpy().reshape(-1,self.ns)
+        true_traj = self.testData['s'].detach().cpu().numpy().reshape(-1,self.ns)
+        input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
+        y_traj = self.testData['y'].detach().cpu().numpy().reshape(-1,self.ny)
+        pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
+
+        testMetrics = pd.DataFrame()
+        test_mae = np.mean(np.abs(pred_traj - true_traj))
+        testMetrics['mae'] = [test_mae]
+        testMetrics.to_csv(self.saveDir+'/test_metrics.csv', index=False)
+
+        figsize = 25
+        lw = 4.0
+        fig,ax = plt.subplots(self.nm+self.nu, figsize=(figsize, figsize))
+        labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
+            axe = ax[row]
+            axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
+            axe.plot(t1, 'c', linewidth=lw, label="True")
+            axe.plot(t2, 'm--', linewidth=lw, label='Pred')
+            axe.tick_params(labelbottom=False, labelsize=figsize)
+            axe.set_title("Class (Normalized)", fontsize=figsize)
+            axe.set_xlim(0,1000)
+        axe.tick_params(labelbottom=True, labelsize=figsize)
+        axe.legend(fontsize=figsize)
+        ax[-1].plot(input_traj, linewidth=lw)
+        ax[-1].set_xlabel('$time$', fontsize=figsize)
+        ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
+        ax[-1].tick_params(labelbottom=True, labelsize=figsize)
+        ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
+        ax[-1].set_xlim(0,1000)
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/rollout', dpi=fig.dpi)
+        plt.close(fig)
+
+        figsize = 6
+        lw = 2.0
+        fig,ax = plt.subplots(self.nm, figsize=(figsize, 4))
+        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        labels = ['HVAC Mode']
+        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
+            ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
+            ax.plot(t1, 'c', linewidth=lw, label="True")
+            ax.plot(t2, 'm--', linewidth=lw, label='Pred')
+            ax.tick_params(labelbottom=False, labelsize=figsize)
+            ax.set_xlim(0,1000)
+        ax.tick_params(labelbottom=True, labelsize=figsize)
+        ax.legend(fontsize=figsize)
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/mode', dpi=fig.dpi)
         plt.close(fig)
 
         # Plot training and validation loss
@@ -892,7 +1100,6 @@ class ControllerSystem(NeuromancerModel):
         # bat_cost_loss = batPower.minimize(weight=3.0, name='bat_cost_loss')
         u_tot_loss = torch.abs(u_tot).minimize(weight=1.0, metric=torch.max, name='u_tot_max')
 
-
         # thermal comfort constraints
         state_lower_bound_penalty = self.weights['x_min'] * (y > ymin)
         state_upper_bound_penalty = self.weights['x_max'] * (y < ymax)
@@ -916,17 +1123,18 @@ class ControllerSystem(NeuromancerModel):
         constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty]
         # constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_lower, bat_upper]
 
-        # proj = solvers.GradientProjection(constraints=[bat_life_lower_bound_penalty, bat_lower, bat_upper],
-        #                                   input_keys=["stored", "u_bat"],
+        # proj = solvers.GradientProjection(constraints=[state_lower_bound_penalty, state_upper_bound_penalty],
+        #                                   input_keys=["y"],
         #                                   num_steps=10,
-        #                                   step_size=10,
+        #                                   step_size=50,
         #                                   decay=0.1,
         #                                   name='proj')
 
         # Problem construction
         # nodes = [self.system, proj]
         nodes = [self.system]
-        loss = PenaltyLoss(objectives, constraints)
+        # loss = PenaltyLoss(objectives, constraints)
+        loss = BarrierLoss(objectives, constraints)
         # self.problem = Problem(nodes, loss, grad_inference=True)
         self.problem = Problem(nodes, loss)
         if self.callback.debugLevel > DebugLevel.NO:
@@ -1142,33 +1350,6 @@ class ControllerSystem(NeuromancerModel):
         plt.tight_layout()
         plt.savefig(self.saveDir+'/simplified_rollout', dpi=fig.dpi)
         plt.close(fig)
-
-        # Gradient descent plotting
-        # x1 = np.arange(0, 15, 0.5)
-        # y1 = np.arange(-10, 10, 0.5)
-        # xx, yy = np.meshgrid(x1, y1)
-
-        # eval objective and constraints
-        # J = np.mean(data['dr'][:,0,:] * yy) + np.mean(data['cost'][:,0,:] * yy) + np.mean(yy[1:]-yy[:-1])
-        # c1 = yy + 10
-        # c2 = 10 - yy
-        # c3 = self.weights['bat_min'] * (xx - data['batRef'][:,0,:])
-
-        # fig, ax = plt.subplots(2, 1)
-        # # cp = ax.contourf(xx, yy, J,
-        # #                 levels=[0, 0.05, 0.2, 0.5, 1.0, 2.0, 4.0, 6.0, 8.0],
-        # #                 alpha=0.6)
-        # # fig.colorbar(cp)
-        # # ax.set_title('Battery EMS')
-        # # cg1 = ax.contour(xx, yy, c1, [0], colors='mediumblue', alpha=0.7)
-        # # plt.setp(cg1.collections,
-        # #         path_effects=[patheffects.withTickedStroke()], alpha=0.7)
-        # # cg2 = ax.contour(xx, yy, c2, [0], colors='mediumblue', alpha=0.7)
-        # # plt.setp(cg2.collections,
-        # #         path_effects=[patheffects.withTickedStroke()], alpha=0.7)
-        # # cg3 = ax.contour(xx, yy, c3, [0], colors='mediumblue', alpha=0.7)
-        # # plt.setp(cg3.collections,
-        # #         path_effects=[patheffects.withTickedStroke()], alpha=0.7)
 
         # # Solution to pNLP via Neuromancer
         # data['name'] = 'test'

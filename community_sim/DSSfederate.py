@@ -97,71 +97,75 @@ battery_state = []
 # Execute federate and start co-sim
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
-for step, current_time in enumerate(times):
+try:
+    for step, current_time in enumerate(times):
 
-    # Update time in co-simulation
-    present_step = (current_time - start_time).total_seconds()
-    present_step += 1  # Ensures other federates update before DSS federate
-    h.helicsFederateRequestTime(fed, present_step)
+        # Update time in co-simulation
+        present_step = (current_time - start_time).total_seconds()
+        present_step += 1  # Ensures other federates update before DSS federate
+        h.helicsFederateRequestTime(fed, present_step)
 
-    # get signals from other federate
-    logger.debug(f"Current time: {current_time}, step: {step}")
-    isupdated = h.helicsInputIsUpdated(subid['load_powers'])
-    if isupdated == 1:
-        loadPowers = h.helicsInputGetString(subid['load_powers'])
-        loadPowers = json.loads(loadPowers)
-        logger.debug("Recieved updated value for load_powers")
-        logger.debug(loadPowers)
-    else:
-        loadPowers = {}
+        # get signals from other federate
+        logger.debug(f"Current time: {current_time}, step: {step}")
+        isupdated = h.helicsInputIsUpdated(subid['load_powers'])
+        if isupdated == 1:
+            loadPowers = h.helicsInputGetString(subid['load_powers'])
+            loadPowers = json.loads(loadPowers)
+            logger.debug("Recieved updated value for load_powers")
+            logger.debug(loadPowers)
+        else:
+            loadPowers = {}
 
-    isupdated = h.helicsInputIsUpdated(subid['control_events'])
-    if isupdated == 1:
-        controlEvents = h.helicsInputGetString(subid['control_events'])
-        controlEvents = json.loads(controlEvents)
-        logger.debug("Recieved updated value for control_events")
-        logger.debug(controlEvents)
-    else:
-        controlEvents = {}
+        isupdated = h.helicsInputIsUpdated(subid['control_events'])
+        if isupdated == 1:
+            controlEvents = h.helicsInputGetString(subid['control_events'])
+            controlEvents = json.loads(controlEvents)
+            logger.debug("Recieved updated value for control_events")
+            logger.debug(controlEvents)
+        else:
+            controlEvents = {}
 
-    # load
-    for loadName, set_point in loadPowers.items():
-        dss.set_power(loadName, element='Load', p=set_point)
+        # load
+        for loadName, set_point in loadPowers.items():
+            dss.set_power(loadName, element='Load', p=set_point)
 
-    # Battery control
-    for controlSet in controlEvents:
-            location = controlSet['location']
-            for key, value in controlSet['devices'].items():
-                if 'Battery' in key:
-                    dss.set_power(key+location, element='Storage', p=value)
-                else:
-                    continue
+        # Battery control
+        for controlSet in controlEvents:
+                location = controlSet['location']
+                for key, value in controlSet['devices'].items():
+                    if 'Battery' in key:
+                        dss.set_power(key+location, element='Storage', p=value)
+                    else:
+                        continue
 
-    # solve OpenDSS network model
-    dss.run_dss()
+        # solve OpenDSS network model
+        dss.run_dss()
 
-    # Publish battery results
-    logger.debug("Publishing values to other federates")
-    battery_data = dss.get_all_elements('Storage')
-    batteryEnergy = battery_data['%stored'] / 100 * battery_data['kWhrated']
-    logger.debug(batteryEnergy.to_dict())
-    h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(batteryEnergy.to_dict()))
-      
-    # Get outputs for the feeder, all voltages, and individual element voltage and power
-    main_results.append(dss.get_circuit_info())
+        # Publish battery results
+        logger.debug("Publishing values to other federates")
+        battery_data = dss.get_all_elements('Storage')
+        batteryEnergy = battery_data['%stored'] / 100 * battery_data['kWhrated']
+        logger.debug(batteryEnergy.to_dict())
+        h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(batteryEnergy.to_dict()))
+        
+        # Get outputs for the feeder, all voltages, and individual element voltage and power
+        main_results.append(dss.get_circuit_info())
 
-    voltage_results.append(dss.get_all_bus_voltages(average=True))
+        voltage_results.append(dss.get_all_bus_voltages(average=True))
 
-    battery_results.append(battery_data['%stored'].to_dict())
-    battery_dispatch.append(battery_data['kW'].to_dict())
-    battery_power.append(dss.get_power('Battery4', element='Storage', total=True)[0])
-    battery_state.append(battery_data['State'].to_dict())
-    
-    # Get load data
-    load_powers_data = {}
-    for loadName in loadPowers:
-        load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})
-    load_powers_results.append(load_powers_data)
+        battery_results.append(battery_data['%stored'].to_dict())
+        battery_dispatch.append(battery_data['kW'].to_dict())
+        battery_power.append(dss.get_power('Battery4', element='Storage', total=True)[0])
+        battery_state.append(battery_data['State'].to_dict())
+        
+        # Get load data
+        load_powers_data = {}
+        for loadName in loadPowers:
+            load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})
+        load_powers_results.append(load_powers_data)
+
+except KeyboardInterrupt:
+    print('Keyboard interrupt received. Stopping simulation and saving current data.')
 
 # Save results files
 pd.DataFrame(main_results).to_csv(main_results_file)
