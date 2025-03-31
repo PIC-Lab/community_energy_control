@@ -194,6 +194,7 @@ class BuildingController:
         # run = 'bat_AB_test_2'
         # run = 'bat_AB_test_3'
         # run = 'alf_AllBuildings_1stPass'
+        run = 'projGrad_1'
         # --------------------------------------------------
 
         # Path relative to the directory the sim is being run in. Needs to be fixed

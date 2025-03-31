@@ -939,6 +939,7 @@ class ControllerSystem(NeuromancerModel):
         # thermal comfort constraints
         state_lower_bound_penalty = self.weights['x_min'] * (y > ymin)
         state_upper_bound_penalty = self.weights['x_max'] * (y < ymax)
+        hvac_lower = self.weights['x_min'] * (u > 0.0)
 
         # temp_model = self.weights['x_min'] * (y == temp_model_var)^2
         # temp_model.name = 'temp_model_eq'
@@ -964,7 +965,7 @@ class ControllerSystem(NeuromancerModel):
         #                                   name='proj')
 
         self.proj = GradientProjSystemDyn(system=System([thermal, out_obs], nsteps=self.nsteps, name='thermal dynamics'),
-                                     constraints=[state_lower_bound_penalty, state_upper_bound_penalty],
+                                     constraints=[state_lower_bound_penalty, state_upper_bound_penalty, hvac_lower],
                                      input_keys=["y", "u"],
                                      num_steps=15,
                                      step_size=10,

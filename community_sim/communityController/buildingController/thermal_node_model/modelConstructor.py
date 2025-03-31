@@ -406,7 +406,8 @@ class BuildingNode(NeuromancerModel):
         self.PlotLoss()
 
 class ExperimentalThermalModel(NeuromancerModel):
-    def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
+    def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel,
+                 saveDir:typing.Optional[str]=None, nsteps_test:typing.Optional[int]=None):
         '''
         Constructor function
 
@@ -424,6 +425,10 @@ class ExperimentalThermalModel(NeuromancerModel):
         self.nx = nx
         self.nu = nu
         self.nd = nd
+        if nsteps_test is None:
+            self.nsteps_test = self.nsteps
+        else:
+            self.nsteps_test = nsteps_test
 
         self.hsizes = self.manager.models[name]['hsizes']
 
@@ -442,57 +447,56 @@ class ExperimentalThermalModel(NeuromancerModel):
         n = len(dataset['X'])
 
         train = {}
-        train['X'] = dataset['X'][:int(np.round(n*0.7)),:]
-        train['U'] = dataset['U'][:int(np.round(n*0.7)),:]
-        train['D'] = dataset['D'][:int(np.round(n*0.7)),:]
-
         dev = {}
-        dev['X'] = dataset['X'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-        dev['U'] = dataset['U'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-        dev['D'] = dataset['D'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-
         test = {}
-        test['X'] = dataset['X'][int(np.round(n*0.9)):,:]
-        test['U'] = dataset['U'][int(np.round(n*0.9)):,:]
-        test['D'] = dataset['D'][int(np.round(n*0.9)):,:]
+        for key, value in dataset.items():
+            train[key] = value[:int(np.round(n*0.7)),:]
+            dev[key] = value[int(np.round(n*0.7)):int(np.round(n*0.9)),:]
+            test[key] = value[int(np.round(n*0.9)):,:]
 
         nbatch = len(test['X']) // self.nsteps
+        params = {'dtype': torch.float32, 'device': self.device}
 
-        trainX = train['X'].reshape(nbatch*7, self.nsteps, self.nx)
-        trainX = torch.tensor(trainX, dtype=torch.float32, device=self.device)
-        trainU = train['U'].reshape(nbatch*7, self.nsteps, self.nu)
-        trainU = torch.tensor(trainU, dtype=torch.float32, device=self.device)
-        trainD = train['D'].reshape(nbatch*7, self.nsteps, self.nd)
-        trainD = torch.tensor(trainD, dtype=torch.float32, device=self.device)
-        trainData = DictDataset({'x': trainX, 'xn': trainX[:,0:1,:],
-                                'u': trainU, 'd': trainD}, name='train')
+        trainData = DictDataset(
+            {'x': torch.tensor(train['X'].reshape(nbatch*7, self.nsteps, self.nx), **params),
+             'xn': torch.tensor(train['X'].reshape(nbatch*7, self.nsteps, self.nx), **params)[:,0:1,:],
+             'u': torch.tensor(train['U'].reshape(nbatch*7, self.nsteps, self.nu), **params),
+             'd': torch.tensor(train['D'].reshape(nbatch*7, self.nsteps, self.nd), **params),
+             'mode': torch.tensor(train['mode'].reshape(nbatch*7, self.nsteps, 1), **params),
+             'u_true':torch.tensor(train['u_true'].reshape(nbatch*7, self.nsteps, 1), **params),
+             'u_prev': torch.tensor(np.round(train['u_true']).reshape(nbatch*7, self.nsteps, 1), **params)[:,0:1,:]},
+            name='train')
         # for key, value in trainData.datadict.items():
         #     print(key, value.shape)
         trainLoader = DataLoader(trainData, batch_size=self.batch_size,
                                 collate_fn=trainData.collate_fn, shuffle=False)
         
-        devX = dev['X'].reshape(nbatch*2, self.nsteps, self.nx)
-        devX = torch.tensor(devX, dtype=torch.float32, device=self.device)
-        devU = dev['U'].reshape(nbatch*2, self.nsteps, self.nu)
-        devU = torch.tensor(devU, dtype=torch.float32, device=self.device)
-        devD = dev['D'].reshape(nbatch*2, self.nsteps, self.nd)
-        devD = torch.tensor(devD, dtype=torch.float32, device=self.device)
-        devData = DictDataset({'x': devX, 'xn': devX[:,0:1,:],
-                                'u': devU, 'd': devD}, name='dev')
+        devData = DictDataset(
+            {'x': torch.tensor(dev['X'].reshape(nbatch*2, self.nsteps, self.nx), **params),
+             'xn': torch.tensor(dev['X'].reshape(nbatch*2, self.nsteps, self.nx), **params)[:,0:1,:],
+             'u': torch.tensor(dev['U'].reshape(nbatch*2, self.nsteps, self.nu), **params),
+             'd': torch.tensor(dev['D'].reshape(nbatch*2, self.nsteps, self.nd), **params),
+             'mode': torch.tensor(dev['mode'].reshape(nbatch*2, self.nsteps, 1), **params),
+             'u_true':torch.tensor(dev['u_true'].reshape(nbatch*2, self.nsteps, 1), **params),
+             'u_prev':torch.tensor(np.round(dev['u_true']).reshape(nbatch*2, self.nsteps, 1), **params)[:,0:1,:]},
+            name='dev'
+        )
         # for key, value in devData.datadict.items():
         #     print(key, value.shape)
         devLoader = DataLoader(devData, batch_size=self.batch_size,
                                 collate_fn=devData.collate_fn, shuffle=True)
         
-        testX = test['X'].reshape(nbatch, self.nsteps, self.nx)
-        testX = torch.tensor(testX, dtype=torch.float32, device=self.device)
-        testU = test['U'].reshape(nbatch, self.nsteps, self.nu)
-        # testU[:,:,1] = np.zeros_like(testU[:,:,1])
-        # testU[:,:,0] = np.zeros_like(testU[:,:,0])
-        testU = torch.tensor(testU, dtype=torch.float32, device=self.device)
-        testD = test['D'].reshape(nbatch, self.nsteps, self.nd)
-        testD = torch.tensor(testD, dtype=torch.float32, device=self.device)
-        testData = {'x': testX, 'xn': testX[:,0:1,:], 'u': testU, 'd':testD}
+        nbatch = len(test['X']) // self.nsteps_test
+
+        testData = {
+            'x': torch.tensor(test['X'].reshape(nbatch, self.nsteps_test, self.nx), **params),
+            'xn': torch.tensor(test['X'].reshape(nbatch, self.nsteps_test, self.nx), **params)[:,0:1,:],
+            'u': torch.tensor(test['U'].reshape(nbatch, self.nsteps_test, self.nu), **params),
+            'd': torch.tensor(test['D'].reshape(nbatch, self.nsteps_test, self.nd), **params),
+            'mode': torch.tensor(test['mode'].reshape(nbatch, self.nsteps_test, 1), **params),
+            'u_true': torch.tensor(test['u_true'].reshape(nbatch, self.nsteps_test, 1), **params),
+            'u_prev': torch.tensor(np.round(test['u_true']).reshape(nbatch, self.nsteps_test, 1), **params)[:,0:1,:]
+        }
         # for key, value in testData.items():
         #     print(key, value.shape)
 
@@ -500,14 +504,18 @@ class ExperimentalThermalModel(NeuromancerModel):
 
     def CreateModel(self):
         '''Defines building thermal system'''
-        fx = blocks.MLP(self.nx+self.nu+self.nd, self.nx, bias=True, linear_map=torch.nn.Linear,
-                        nonlin=torch.nn.Sigmoid, hsizes=self.hsizes)
+
+        # fx = blocks.MLP(self.nx+self.nu+self.nd, self.nx, bias=True, linear_map=torch.nn.Linear,
+        #                 nonlin=torch.nn.Sigmoid, hsizes=self.hsizes)
     
-        fxRK4 = integrators.RK4(fx)
+        # fxRK4 = integrators.RK4(fx)
 
-        model = Node(fxRK4, ['xn', 'u', 'd'], ['xn'], name="buildingNODE")
+        # model = Node(fxRK4, ['xn', 'u_bin', 'd'], ['xn'], name="buildingNODE")
 
-        C = torch.tensor([[1.0, 0.0]], device=self.device)
+        model = Node(ThermalModel(self.nx, self.nu, self.nd, self.hsizes),
+                     ['xn', 'u', 'd', 'mode', 'u_prev'], ['xn', 'u_bin', 'u_prev'], name='buildingNODE_exp')
+
+        C = torch.tensor([[1.0]], device=self.device)
         ynext = lambda x: x @ C.T
         output_model = Node(ynext, ['xn'], ['y'], name='out_obs')
 
@@ -537,10 +545,8 @@ class ExperimentalThermalModel(NeuromancerModel):
 
     def TestModel(self):
         '''Plots the testing of the building thermal model'''
-        dynamics_model = self.problem.nodes[0]
-        dynamics_model.nsteps = self.testData['x'].shape[1]
-
-        testOutputs = dynamics_model(self.testData)
+        self.model.nsteps = self.nsteps_test
+        testOutputs = self.model(self.testData)
 
         pred_traj = testOutputs['xn'][:,:-1,:].detach().cpu().numpy().reshape(-1,self.nx)
         true_traj = self.testData['x'].detach().cpu().numpy().reshape(-1,self.nx)
@@ -562,9 +568,10 @@ class ExperimentalThermalModel(NeuromancerModel):
             axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
             axe.plot(t1, 'c', linewidth=lw, label="True")
             axe.plot(t2, 'm--', linewidth=lw, label='Pred')
+            axe.plot(input_traj, linewidth=lw, label='setpoint')
             axe.tick_params(labelbottom=False, labelsize=figsize)
             axe.set_title("Indoor Air Temperature (Normalized)", fontsize=figsize)
-            axe.set_xlim([0,60])
+            axe.set_xlim([0,500])
             # axe.vlines(np.linspace(30, 270, 9), 0, 1)
         axe.tick_params(labelbottom=True, labelsize=figsize)
         axe.legend(fontsize=figsize)
@@ -572,14 +579,17 @@ class ExperimentalThermalModel(NeuromancerModel):
         ax[-2].legend(fontsize=figsize)
         ax[-2].set_title("Outdoor Air Temperature (Normalized)", fontsize=figsize)
         ax[-2].tick_params(labelbottom=True, labelsize=figsize)
-        ax[-2].set_xlim([0,60])
-        ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
+        ax[-2].set_xlim([0,500])
+        # ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
+        ax[-1].plot(self.testData['u_true'].detach().cpu().numpy().reshape(-1, 1), label='u_true')
+        ax[-1].plot(testOutputs['u_bin'].detach().cpu().numpy().reshape(-1, 1), label='u_bin')
+        ax[-1].plot(testOutputs['u_prev'].detach().cpu().numpy().reshape(-1,1), label='mode_lock')
         ax[-1].legend(fontsize=figsize)
         ax[-1].set_xlabel('$time$', fontsize=figsize)
         ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
         ax[-1].tick_params(labelbottom=True, labelsize=figsize)
         ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
-        ax[-1].set_xlim([0,60])
+        ax[-1].set_xlim([0,500])
         plt.figtext(0.01, 0.01, self.runName, fontsize=figsize)
         plt.tight_layout()
         fig.savefig(self.saveDir+'/building_rollout', dpi=fig.dpi)
@@ -590,182 +600,15 @@ class ExperimentalThermalModel(NeuromancerModel):
         fig,ax = plt.subplots(self.nx, figsize=(7, 5))
         labels = [f'$y_{k}$' for k in range(len(true_traj))]
         for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-            ax[row].plot(t1, 'c', linewidth=lw, label="True")
-            ax[row].plot(t2, 'm--', linewidth=lw, label='Pred')
-            ax[row].tick_params(labelbottom=False, labelsize=fs)
-            ax[row].set_ylabel(label, rotation=0, labelpad=20, fontsize=fs)
-            ax[row].tick_params(labelbottom=True, labelsize=fs)
-        # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
-            ax[row].legend(fontsize=fs)
-        plt.tight_layout()
-        fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
-        plt.close(fig)
-
-        # Plot training and validation loss
-        self.PlotLoss()
-
-class SetpointPredictor(NeuromancerModel):
-    def __init__(self, ns:int, nu:int, ny:int, manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
-        '''
-        Constructor function
-
-        :param nm: (int) number of hvac modes
-        :param nu: (int) number of control signals
-        :param manager (RunManager) object that keeps track of various model parameters
-        :param name: (str) name of the model
-        :param device: (torch.device) device to run training on
-        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
-        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
-        '''
-        super().__init__(manager, name, device, debugLevel, saveDir)
-
-        self.ns = ns
-        self.nu = nu
-        self.ny = ny
-
-        self.hsizes = self.manager.models[name]['hsizes']
-
-    def PrepareDataset(self, dataset):
-        '''
-        Prepare dataset for training
-        '''
-        n = len(dataset['S'])
-
-        train = {}
-        train['S'] = dataset['S'][:int(np.round(n*0.7)),:]
-        train['U'] = dataset['U'][:int(np.round(n*0.7)),:]
-        train['Y'] = dataset['Y'][:int(np.round(n*0.7)),:]
-
-        dev = {}
-        dev['S'] = dataset['S'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-        dev['U'] = dataset['U'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-        dev['Y'] = dataset['Y'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-
-        test = {}
-        test['S'] = dataset['S'][int(np.round(n*0.9)):,:]
-        test['U'] = dataset['U'][int(np.round(n*0.9)):,:]
-        test['Y'] = dataset['Y'][int(np.round(n*0.9)):,:]
-
-        nbatch = len(test['S']) // self.nsteps
-
-        trainM = train['S'].reshape(nbatch*7, self.nsteps, self.ns)
-        trainM = torch.tensor(trainM, dtype=torch.float32, device=self.device)
-        trainU = train['U'].reshape(nbatch*7, self.nsteps, self.nu)
-        trainU = torch.tensor(trainU, dtype=torch.float32, device=self.device)
-        trainY = train['Y'].reshape(nbatch*7, self.nsteps, self.ny)
-        trainY = torch.tensor(trainY, dtype=torch.float32, device=self.device)
-        trainData = DictDataset({'s': trainM, 'u': trainU, 'y': trainY}, name='train')
-        trainLoader = DataLoader(trainData, batch_size=self.batch_size,
-                                collate_fn=trainData.collate_fn, shuffle=True)
-        
-        devM = dev['S'].reshape(nbatch*2, self.nsteps, self.ns)
-        devM = torch.tensor(devM, dtype=torch.float32, device=self.device)
-        devU = dev['U'].reshape(nbatch*2, self.nsteps, self.nu)
-        devU = torch.tensor(devU, dtype=torch.float32, device=self.device)
-        devY = dev['Y'].reshape(nbatch*2, self.nsteps, self.ny)
-        devY = torch.tensor(devY, dtype=torch.float32, device=self.device)
-        devData = DictDataset({'s': devM, 'u': devU, 'y': devY}, name='dev')
-        devLoader = DataLoader(devData, batch_size=self.batch_size,
-                                collate_fn=devData.collate_fn, shuffle=True)
-        
-        testM = test['S'].reshape(nbatch, self.nsteps, self.ns)
-        testM = torch.tensor(testM, dtype=torch.float32, device=self.device)
-        testU = test['U'].reshape(nbatch, self.nsteps, self.nu)
-        testU = torch.tensor(testU, dtype=torch.float32, device=self.device)
-        testY = test['Y'].reshape(nbatch, self.nsteps, self.ny)
-        testY = torch.tensor(testY, dtype=torch.float32, device=self.device)
-        testData = {'s': testM, 'u': testU, 'y': testY}
-
-        return trainLoader, devLoader, testData
-
-    def CreateModel(self):
-        '''Defines HVAC mode classifier'''
-        net = blocks.MLP_bounds(
-            insize=self.nu,
-            outsize=self.nm,
-            hsizes=self.hsizes,
-            nonlin=nn.Sigmoid
-        )
-        self.model = Node(net, ['u', 'y'], ['setpoint'], name='Setpoint')
-
-        system = System([self.model], name='System', nsteps=self.nsteps)
-        system.to(device=self.device)
-
-        s = variable("s")
-        sHat = variable('setpoint')
-
-        referenceLoss = 5.*(sHat == s)^2
-        referenceLoss.name = 'ref_loss'
-
-        onestepLoss = 1.*(sHat[:,1,:] == s[:,1,:])^2
-        onestepLoss.name = 'onestep_loss'
-
-        objectives = [referenceLoss, onestepLoss]
-        constraints = []
-
-        loss = PenaltyLoss(objectives, constraints)
-
-        self.problem = Problem([system], loss)
-
-    def TestModel(self):
-        '''
-        Create plots from test data
-        '''
-        dynamics_model = self.problem.nodes[0]
-        dynamics_model.nsteps = self.testData['m'].shape[1]
-
-        testOutputs = dynamics_model(self.testData)
-
-        pred_traj = testOutputs['setpoint'].detach().cpu().numpy().reshape(-1,self.ns)
-        true_traj = self.testData['s'].detach().cpu().numpy().reshape(-1,self.ns)
-        input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
-        y_traj = self.testData['y'].detach().cpu().numpy().reshape(-1,self.ny)
-        pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
-
-        testMetrics = pd.DataFrame()
-        test_mae = np.mean(np.abs(pred_traj - true_traj))
-        testMetrics['mae'] = [test_mae]
-        testMetrics.to_csv(self.saveDir+'/test_metrics.csv', index=False)
-
-        figsize = 25
-        lw = 4.0
-        fig,ax = plt.subplots(self.nm+self.nu, figsize=(figsize, figsize))
-        labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-            axe = ax[row]
-            axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
-            axe.plot(t1, 'c', linewidth=lw, label="True")
-            axe.plot(t2, 'm--', linewidth=lw, label='Pred')
-            axe.tick_params(labelbottom=False, labelsize=figsize)
-            axe.set_title("Class (Normalized)", fontsize=figsize)
-            axe.set_xlim(0,1000)
-        axe.tick_params(labelbottom=True, labelsize=figsize)
-        axe.legend(fontsize=figsize)
-        ax[-1].plot(input_traj, linewidth=lw)
-        ax[-1].set_xlabel('$time$', fontsize=figsize)
-        ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
-        ax[-1].tick_params(labelbottom=True, labelsize=figsize)
-        ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
-        ax[-1].set_xlim(0,1000)
-        plt.tight_layout()
-        fig.savefig(self.saveDir+'/rollout', dpi=fig.dpi)
-        plt.close(fig)
-
-        figsize = 6
-        lw = 2.0
-        fig,ax = plt.subplots(self.nm, figsize=(figsize, 4))
-        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        labels = ['HVAC Mode']
-        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-            ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
             ax.plot(t1, 'c', linewidth=lw, label="True")
             ax.plot(t2, 'm--', linewidth=lw, label='Pred')
-            ax.tick_params(labelbottom=False, labelsize=figsize)
-            ax.set_xlim(0,1000)
-        ax.tick_params(labelbottom=True, labelsize=figsize)
-        ax.legend(fontsize=figsize)
+            ax.tick_params(labelbottom=False, labelsize=fs)
+            ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=fs)
+            ax.tick_params(labelbottom=True, labelsize=fs)
+        # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
+            ax.legend(fontsize=fs)
         plt.tight_layout()
-        fig.savefig(self.saveDir+'/mode', dpi=fig.dpi)
+        fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
         plt.close(fig)
 
         # Plot training and validation loss
@@ -1467,6 +1310,76 @@ class ControllerSystem(NeuromancerModel):
         :return: Selected slice of disturbance data
         '''
         return data[start_idx:start_idx+nsim, :]
+    
+class ThermalModel(nn.Module):
+    def __init__(self, nx, nu, nd, hsizes):
+        super().__init__()
+
+        # self.deadband = 0.5 / (24.444 - 18)
+        self.deadband = 0.15
+        self.mode_lock = 0
+
+        fx = blocks.MLP(insize=nx+nu+nd,
+                        outsize=nx,
+                        bias=True,
+                        linear_map=torch.nn.Linear,
+                        nonlin=torch.nn.Sigmoid,
+                        hsizes=hsizes)
+        
+        self.fxRK4 = integrators.RK4(fx)
+
+        self.debug = False
+
+    def forward(self, x, u, d, m, prev):
+        assert len(x.shape) == 2
+        assert len(u.shape) == 2
+        assert len(d.shape) == 2
+        assert len(m.shape) == 2
+
+        # u_bin = torch.where(m == 2, x > u + self.deadband, torch.where(m == 1, x < u - self.deadband, torch.zeros_like(u)))
+        u_bin = torch.zeros_like(x)
+        self.mode_lock = prev.clone()
+        # self.mode_lock = 0
+        # mode_list = []
+
+        for i in range(0, x.shape[0]):
+            
+            if m[i] == 2:
+
+                if (x[i,:] > u[i,:]) or (self.mode_lock[i,:]):
+                    u_bin[i,:] = torch.ones_like(x[i,:])
+                    self.mode_lock[i,:] = torch.ones_like(x[i,:])
+                else:
+                    u_bin[i,:] = torch.zeros_like(x[i,:])
+
+                if (self.mode_lock[i,:]) and (x[i,:] < u[i,:] - self.deadband):
+                    self.mode_lock[i,:] = torch.zeros_like(x[i,:])
+
+            # elif m[i] == 1:
+            #     u_bin[i,:] = x[i,:] < u[i,:]
+
+            #     if self.count < self.lockout:
+            #         self.mode_lock = 1
+            #         self.count += 1
+            #     else:
+            #         self.mode_lock = 0
+            #         self.count = 0
+
+            # else:
+            #     u_bin[i,:] = [0]
+
+            # if self.debug:
+            #     print(f"{i}: {x[i,0]:.3f}, {u[i,0]:.3f}")
+            #     print(self.mode_lock)
+            #     input('')
+
+        # self.debug = True
+        # print(x.shape[0])
+        # print(self.fxRK4(x,u_bin,d).shape)
+        # print(u_bin.shape)
+        # print(torch.tensor(mode_list).shape)
+
+        return (self.fxRK4(x, u_bin, d), u_bin, self.mode_lock)
     
 class BatteryModel(nn.Module):
     def __init__(self, eff, capacity, nx, nu):
