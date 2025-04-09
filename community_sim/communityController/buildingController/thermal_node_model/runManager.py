@@ -1,21 +1,34 @@
 import json
 import os
 import shutil
+from git import Repo
 
 class RunManager():
-    def __init__(self, name, saveDir='savedRuns'):
-        '''Constructor'''
+    def __init__(self, name, saveDir='savedRuns', saveToLatest=True):
+        '''
+        Constructor
+        :param name: (str) name of the run that it will be saved as
+        :param saveDir: (str) name of the folder where runs should be saved
+        :param saveToLatest: (bool) most recent run will be saved as 'latestRun' and will swap to the
+                             specific name when a future run saves the previous one, defaults to True
+                             Primarily used to allow multiple runs to happen in parallel
+        '''
 
         self.name = name
         dirName = os.path.dirname(__file__)
         self.saveDir = os.path.join(dirName, saveDir)
+        repo = Repo()
+        self.commit = repo.git.rev_parse(repo.head, short=True)
+
         self.models = {}
         self.dataset = {"path": '', "sliceBool": False, "slice_idx": [0,0]}
 
         self.tempBounds = []
 
-        
-        self.runPath = self.saveDir+'/latestRun/'
+        if saveToLatest:
+            self.runPath = self.saveDir+'/latestRun/'
+        else:
+            self.runPath = self.saveDir+f'/{name}/'
 
         if not(os.path.exists(self.saveDir)):
             print("SaveDir does not exist, creating it")
@@ -28,6 +41,7 @@ class RunManager():
         # Create dict
         outDict = {}
         outDict['name'] = self.name
+        outDict['commit'] = self.commit
         outDict['models'] = self.models
         outDict['dataset'] = self.dataset
         outDict['tempBounds'] = self.tempBounds
@@ -62,6 +76,11 @@ class RunManager():
         self.models = runJson['models']
         self.dataset = runJson['dataset']
         self.tempBounds = runJson['tempBounds']
+
+        if 'commit' in runJson.keys():
+            self.commit = runJson['commit']
+        else:
+            self.commit = 'Created in an older version of RunManager'
 
         if runName != 'latestRun':
             self.runPath = self.saveDir+'/'+self.name+'/'
