@@ -130,22 +130,22 @@ try:
         for alias in aliasesSensorIdx:
             if first:
                 predictedTraj = {}
-                predictedTraj[alias] = controller.trajectoryList[alias]['stored'][0,:,0].detach().numpy()
+                predictedTraj[alias] = controller.trajectoryList[alias]['horizon_stored'][0,:,0].detach().numpy()
                 first = False
 
             controlTraj = {}
             controlTraj['Time'] = current_time
-            controlTraj['Control Effort'] = controller.trajectoryList[alias]['u'][0,0,0].detach().item()
-            controlTraj['Predicted Temperature'] = controller.trajectoryList[alias]['y'][0,0,0].detach().item()
-            controlTraj['Ymax'] = controller.trajectoryList[alias]['ymax'][0,0,0].detach().item()
-            controlTraj['Ymin'] = controller.trajectoryList[alias]['ymin'][0,0,0].detach().item()
-            controlTraj['dr'] = controller.trajectoryList[alias]['dr'][0,0,0].detach().item()
-            controlTraj['cost'] = controller.trajectoryList[alias]['cost'][0,0,0].detach().item()
-            controlTraj['stored'] = controller.trajectoryList[alias]['stored'][0,0,0].detach().item()
-            controlTraj['u_bat'] = controller.trajectoryList[alias]['u_bat'][0,0,0].detach().item()
-            controlTraj['bat_ref'] = controller.trajectoryList[alias]['batRef'][0,0,0].detach().item()
-            controlTraj['hvacPower'] = controller.trajectoryList[alias]['hvacPower'][0,0,0].detach().item()
-            controlTraj['batPower'] = controller.trajectoryList[alias]['batPower'][0,0,0].detach().item()
+            controlTraj['Control Effort'] = controller.trajectoryList[alias]['horizon_u'][0,0,0].detach().item()
+            controlTraj['Predicted Temperature'] = controller.trajectoryList[alias]['horizon_y'][0,0,0].detach().item()
+            controlTraj['Ymax'] = controller.trajectoryList[alias]['horizon_ymax'][0,0,0].detach().item()
+            controlTraj['Ymin'] = controller.trajectoryList[alias]['horizon_ymin'][0,0,0].detach().item()
+            controlTraj['dr'] = controller.trajectoryList[alias]['horizon_dr'][0,0,0].detach().item()
+            controlTraj['cost'] = controller.trajectoryList[alias]['horizon_cost'][0,0,0].detach().item()
+            controlTraj['stored'] = controller.trajectoryList[alias]['horizon_stored'][0,0,0].detach().item()
+            controlTraj['u_bat'] = controller.trajectoryList[alias]['horizon_u_bat'][0,0,0].detach().item()
+            controlTraj['bat_ref'] = controller.trajectoryList[alias]['horizon_batRef'][0,0,0].detach().item()
+            controlTraj['hvacPower'] = controller.trajectoryList[alias]['horizon_hvacPower'][0,0,0].detach().item()
+            controlTraj['batPower'] = controller.trajectoryList[alias]['horizon_batPower'][0,0,0].detach().item()
             outputs[alias].append(controlTraj)
 
             coordDict = {}

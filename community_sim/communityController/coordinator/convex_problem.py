@@ -38,9 +38,13 @@ class ConvexProblem(ABC):
         :param paramValues: (dict{paramName: value}) values for problem parameters, defaults to an empty dict
         :param verbose: (bool) defaults to false
         '''
-        for key, value in paramValues.items():
-            param = self.FindParameterByName(key)
-            param.value = value
+        try:
+            for key, value in paramValues.items():
+                param = self.FindParameterByName(key)
+                param.value = value
+        except ValueError as e:
+            print(f'Parameter {key} recieved shape {value.shape} instead of {param.shape}')
+            print(e)
 
         result = self.prob.solve(verbose=verbose, solver=cp.CLARABEL)
         return result

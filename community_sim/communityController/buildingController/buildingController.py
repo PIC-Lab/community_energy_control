@@ -3,7 +3,7 @@ import numpy as np
 import os
 import datetime as dt
 
-from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, ModeClassifier, Normalizer
+from communityController.buildingController.thermal_node_model.modelConstructor_projGrad import BuildingNode, ControllerSystem, ModeClassifier, Normalizer
 from communityController.buildingController.thermal_node_model.runManager import RunManager
 
 import torch
@@ -92,7 +92,8 @@ class BuildingController:
                             'batRef': torch.tensor(self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')[np.newaxis,:], dtype=torch.float32),
                             'batMax': torch.tensor(np.ones((1,self.nsteps+1,1))*8.0, dtype=torch.float32),
                             'hvacPower': torch.zeros(self.stateData.shape),
-                            'batPower': torch.zeros(self.stateData.shape)}
+                            'batPower': torch.zeros(self.stateData.shape),
+                            'name': 'horizon'}
         
         self.horizonData = self.norm.norm(self.horizonData, keys=['y', 'y', 'y', 'y', 'd', 'leave', 'p', 'leave', 'leave', 'leave'])
 
@@ -143,9 +144,9 @@ class BuildingController:
         # Run control
         trajectories = self.cl_system(self.horizonData)
 
-        self.actuatorValues['battery'] = trajectories['u_bat'][0,0,0].detach().item()
+        self.actuatorValues['battery'] = trajectories['horizon_u_bat'][0,0,0].detach().item()
 
-        control = trajectories['u'][0,0,0].detach()
+        control = trajectories['horizon_u'][0,0,0].detach()
 
         if self.HVAC_lock:
             self.count += 1
@@ -194,7 +195,7 @@ class BuildingController:
         # run = 'bat_AB_test_2'
         # run = 'bat_AB_test_3'
         # run = 'alf_AllBuildings_1stPass'
-        run = 'projGrad_1'
+        run = 'projGrad_3'
         # --------------------------------------------------
 
         # Path relative to the directory the sim is being run in. Needs to be fixed
@@ -270,7 +271,7 @@ class BuildingController:
         controlSystem.TrainModel(dataset=None, tempMin=None, tempMax=None, load=True, test=False)
 
         self.y_idx = initParams['y_idx']
-        self.cl_system = controlSystem.system
+        self.cl_system = controlSystem.problem
 
     @staticmethod
     def TOUPricing(date, nsteps):

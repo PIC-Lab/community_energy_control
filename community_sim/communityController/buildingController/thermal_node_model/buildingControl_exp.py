@@ -112,7 +112,7 @@ def Main():
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
             'weights': {'dr_loss': 6.0, 'cost_loss': 5.0, 'delta_loss': 1.0,
-                        'hvac_loss': 0.5, 'bat_loss': 2.0, 'bat_max_loss': 0.7,
+                        'hvac_loss': 2.0, 'setpoint_loss': 2.0, 'bat_loss': 2.0, 'bat_max_loss': 0.7,
                         'x_min': 20.0, 'x_max': 20.0, 'bat_min': 15.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
@@ -280,7 +280,7 @@ def Main():
             
             manager.models["buildingThermal"]["init_params"] = {'nx': buildingThermal.nx, 'nu': buildingThermal.nu, 'nd': buildingThermal.nd}
         # ------------------------------------------
-
+        
         # ------------ Train controller ------------
         controlSystem = ControllerSystem(nx=dataset['X'].shape[1],
                                         nu=dataset['U'].shape[1],

@@ -83,7 +83,7 @@ class CommunityController:
             self.coordDebug[alias] = {}
             self.coordDebug[alias]['usagePenalty'] = self.coordinator.usagePenalty[i]
             self.coordDebug[alias]['flexLoad'] = self.coordinator.adjustValues['flexLoad'][i,:]
-            self.predictedLoad[i,:] += trajectories['u'].detach().numpy()[0,:,0]
+            self.predictedLoad[i,:] += trajectories['horizon_u'].detach().numpy()[0,:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
         
         return controlEvents

@@ -923,8 +923,8 @@ class ControllerSystem(NeuromancerModel):
         #                           display_name=thermal.name+'_var')
 
         # objectives
-        u_tot = hvacPower
-        # u_tot = hvacPower + batPower
+        # u_tot = hvacPower
+        u_tot = hvacPower + batPower
         u_tot.name = 'u_tot'
 
         dr_loss = (dr * u_tot).minimize(weight=self.weights['dr_loss'], name='dr_loss')
@@ -950,31 +950,37 @@ class ControllerSystem(NeuromancerModel):
         state_lower_bound_penalty.name = 'x_min'
         state_upper_bound_penalty.name = 'x_max'
         bat_life_lower_bound_penalty.name = 'bat_life_min'
+        hvac_lower.name = 'hvac_lower'
 
         # list of constraints and objectives
         # objectives = [hvac_cost_loss, hvac_loss, bat_cost_loss, bat_loss]
-        objectives = [u_tot_loss, delta_loss, hvac_loss]
-        constraints = [state_lower_bound_penalty, state_upper_bound_penalty]
+        objectives = [cost_loss]
+        constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, hvac_lower]
         # constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_lower, bat_upper]
 
-        # self.proj = solvers.GradientProjection(constraints=[state_lower_bound_penalty, state_upper_bound_penalty],
-        #                                   input_keys=["y"],
-        #                                   num_steps=10,
-        #                                   step_size=1,
-        #                                   decay=0.1,
-        #                                   name='proj')
-
-        self.proj = GradientProjSystemDyn(system=System([thermal, out_obs], nsteps=self.nsteps, name='thermal dynamics'),
+        proj_hvac = GradientProjSystemDyn(system=System([thermal, out_obs], nsteps=self.nsteps, name='thermal dynamics'),
                                      constraints=[state_lower_bound_penalty, state_upper_bound_penalty, hvac_lower],
-                                     input_keys=["y", "u"],
-                                     num_steps=15,
-                                     step_size=10,
-                                     decay=0.5,
-                                     name='proj')
+                                     input_keys=["u"],
+                                     system_keys=['y'],
+                                     ic_keys=['xn'],
+                                     num_steps=5,
+                                     step_size=15,
+                                     decay=0.1,
+                                     name='proj_hvac')
+        
+        proj_bat = GradientProjSystemDyn(system=System([batModel], nsteps=self.nsteps, name='battery dynamics', drop_init_cond=True),
+                                         constraints = [bat_life_lower_bound_penalty],
+                                         input_keys=['u_bat'],
+                                         system_keys=['stored'],
+                                         ic_keys=['stored'],
+                                         num_steps=10,
+                                         step_size=10,
+                                         decay=0.1,
+                                         name='proj_bat')
 
         # Problem construction
         # nodes = [self.system]
-        nodes = [self.system, self.proj]
+        nodes = [self.system, proj_hvac, proj_bat]
         loss = PenaltyLoss(objectives, constraints)
         self.problem = Problem(nodes, loss, grad_inference=True)
         if self.callback.debugLevel > DebugLevel.NO:
@@ -1199,28 +1205,67 @@ class ControllerSystem(NeuromancerModel):
 
         # intermediate projection steps
         sol_map = self.problem.nodes[0]
-        # proj = self.problem.nodes[1]
-        num_steps = self.proj.num_steps
+        proj = self.problem.nodes[1]
+        num_steps = proj.num_steps
         x_proj = sol_map(data)
-        self.proj.num_steps = 1    # set projections steps to 1 for visualisation
+        proj.num_steps = 1    # set projections steps to 1 for visualisation
         X_projected = [np.concatenate([x_proj['y'].detach().numpy(), x_proj['u'].detach().numpy()],axis=2)]
         for steps in range(num_steps):
             proj_inputs = {**data, **x_proj}
-            x_proj = self.proj(proj_inputs)
+            x_proj = proj(proj_inputs)
             X_projected.append(np.concatenate([x_proj['y'].detach().numpy(), x_proj['u'].detach().numpy()], axis=2))
         projected_steps = np.concatenate(X_projected, axis=0)
+        proj.num_steps = num_steps
 
         # plot optimal solutions CasADi vs Neuromancer
         fig, ax = plt.subplots(2)
-        ax[0].plot(x_nm[0,:,0], label='NeuroMANCER')
+        ax[0].plot(x_nm[0,:,0], linewidth=lw, label='problem')
+        ax[0].plot(trajectories['y'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
         ax[0].plot(Ymax, color='black')
         ax[0].plot(Ymin, color='black')
         # plot projected steps
-        ax[1].plot(y_nm[0,:,0], label='NeuroMANCER')
+        ax[1].plot(y_nm[0,:,0], linewidth=lw, label='problem')
+        ax[1].plot(trajectories['u'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
+        # ax[1].legend()
         for i in range(projected_steps.shape[0]):
-            ax[0].plot(projected_steps[i,:, 0], label='projection steps')
-            ax[1].plot(projected_steps[i,:, 1], label='projection steps')
-        plt.savefig(self.saveDir+'/grad_proj', dpi = fig.dpi)
+        # for i in range(5):
+        # i = 15
+            ax[0].plot(projected_steps[i,:, 0], label='projection steps', zorder=-1)
+            ax[1].plot(projected_steps[i,:, 1], label='projection steps', zorder=-1)
+        plt.savefig(self.saveDir+'/grad_proj_hvac', dpi = fig.dpi)
+
+
+        x_nm = model_out['test_' + "stored"].detach().numpy()
+        y_nm = model_out['test_' + "u_bat"].detach().numpy()
+        # intermediate projection steps
+        sol_map = self.problem.nodes[0]
+        proj = self.problem.nodes[2]
+        num_steps = proj.num_steps
+        x_proj = sol_map(data)
+        proj.num_steps = 1    # set projections steps to 1 for visualisation
+        X_projected = [np.concatenate([x_proj['stored'].detach().numpy(), x_proj['u_bat'].detach().numpy()],axis=2)]
+        for steps in range(num_steps):
+            proj_inputs = {**data, **x_proj}
+            x_proj = proj(proj_inputs)
+            X_projected.append(np.concatenate([x_proj['stored'].detach().numpy(), x_proj['u_bat'].detach().numpy()], axis=2))
+        projected_steps = np.concatenate(X_projected, axis=0)
+        proj.num_steps = num_steps
+
+        # plot optimal solutions CasADi vs Neuromancer
+        fig, ax = plt.subplots(2)
+        ax[0].plot(x_nm[0,:,0], linewidth=lw, label='problem')
+        ax[0].plot(trajectories['stored'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
+        ax[0].plot(trajectories['batRef'].detach().cpu().reshape(nsteps_test, 1), color='black')
+        # plot projected steps
+        ax[1].plot(y_nm[0,:,0], linewidth=lw, label='problem')
+        ax[1].plot(trajectories['u_bat'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
+        # ax[1].legend()
+        for i in range(projected_steps.shape[0]):
+        # for i in range(5):
+        # i = 15
+            ax[0].plot(projected_steps[i,:, 0], label='projection steps', zorder=-1)
+            ax[1].plot(projected_steps[i,:, 1], label='projection steps', zorder=-1)
+        plt.savefig(self.saveDir+'/grad_proj_bat', dpi = fig.dpi)
 
         # Plot training and validation loss
         self.PlotLoss()
@@ -1240,11 +1285,11 @@ class ControllerSystem(NeuromancerModel):
         batched_xmax = batched_xmin + batched_range
 
         bat_range = torch.distributions.Uniform(0.2 * self.batSize, 0.8 * self.batSize)
-        batched_batRef = bat_range.sample((self.n_samples, 1, self.nref)).repeat(1, self.nsteps+1, 1)
+        batched_batRef = bat_range.sample((self.n_samples, 1, self.nref)).repeat(1, self.nsteps, 1)
         # batched_batMax = torch.tensor(np.ones((self.n_samples,self.nsteps+1,1))*0.9*self.batSize, dtype=torch.float32, device=self.device)
         batched_batMax = torch.clamp(batched_batRef + torch.tensor(self.rng.uniform(low=0.1*self.batSize, high=0.8*self.batSize, size=(self.n_samples, 1, self.nref)), dtype=torch.float32, device=self.device), min=None, max=self.batSize)
 
-        batched_dr = torch.tensor(self.rng.uniform(low=-1, high=1, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps+1, 1)
+        batched_dr = torch.tensor(self.rng.uniform(low=-1, high=1, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps, 1)
         
         # sampled disturbance trajectories from simulation model
         temp_d = []
@@ -1392,8 +1437,8 @@ from neuromancer.gradients import gradient
 class GradientProjSystemDyn(solvers.Solver):
     '''
     '''
-    def __init__(self, system, constraints, input_keys, output_keys=[], decay=0.1,
-                 num_steps=1, step_size=0.01, energy_update=True, name=None):
+    def __init__(self, system, constraints, input_keys, output_keys=[], system_keys=[], ic_keys=[],
+                 decay=0.1, num_steps=1, step_size=0.01, energy_update=True, name=None):
         '''
         '''
         super().__init__(constraints=constraints,
@@ -1403,8 +1448,12 @@ class GradientProjSystemDyn(solvers.Solver):
         self.num_steps = num_steps
         self.step_size = step_size
         self.input_keys = input_keys
+        self.system_keys = system_keys
         self.decay = decay
         self.energy_update = energy_update
+        self.ic_keys = ic_keys
+
+        self.output_keys += system_keys
 
     def _constraints_check(self):
         '''
@@ -1412,31 +1461,23 @@ class GradientProjSystemDyn(solvers.Solver):
         for con in self.constraints:
             assert str(con.comparator) in ['lt', 'gt'], \
                 f'constraint {con} must be inequality (lt or gt), but it is {str(con.comparator)}'
-            
-    def cat(self, data3d, data2d):
+
+    def eval_system_states(self, input_dict):
         '''
         '''
-        for k in data2d:
-            if k not in data3d:
-                data3d[k] = data2d[k][:, None, :]
-            else:
-                try:
-                    data3d[k] = torch.cat([data3d[k], data2d[k][:, None, :]], dim=1)
-                except RuntimeError as e:
-                    print(e)
-                    print(k)
-                    print(data3d[k].shape)
-                    print(data2d[k][:, None, :].shape)
-                    input('wait')
-            return data3d
+        data = input_dict.copy()
+        for key in self.ic_keys:
+            data[key] = data[key][:,0:1,:].detach()
+        for key in self.system_keys:
+            if not(key in self.ic_keys):
+                data.pop(key).detach()
+        data = self.system(data)
+        return data
             
     def con_viol_energy(self, input_dict):
         '''
         '''
-        data = input_dict.copy()
-        data['xn'] = data['xn'][:,0:1,:].detach()
-        data.pop('y').detach()
-        data = self.system(data)
+        data = self.eval_system_states(input_dict)
         C_violations = []
         for con in self.constraints:
             output = con(data)
@@ -1459,9 +1500,9 @@ class GradientProjSystemDyn(solvers.Solver):
         for k in range(self.num_steps):
             # update energy
             energy, data = self.con_viol_energy(data)
-            # step = torch.autograd.grad(energy, [data['y'], data['u']], grad_outputs=torch.ones_like(energy), create_graph=True)
+            if self.energy_update:
+                output_data = data
             
-            i = 0
             for in_key, out_key in zip(self.input_keys, self.output_keys):
                 # get grad
                 x = data[in_key]
@@ -1475,7 +1516,12 @@ class GradientProjSystemDyn(solvers.Solver):
                 d = d - self.decay * d
                 output_data.pop(out_key).detach()
                 output_data[out_key] = x
-                i += 1
+
+            for key in self.system_keys:
+                # Updated system states
+                states = self.eval_system_states(output_data)
+                output_data.pop(key).detach()
+                output_data[key] = states[key]
                 
         return output_data
 
@@ -1696,24 +1742,6 @@ class Callback_Controller(Callback):
         Path(f'{self.savePath}/debug/Battery').mkdir(exist_ok=True, parents=True)
         fig.savefig(f"{self.savePath}/debug/Battery/epoch{output['train_epoch']}")
         plt.close(fig)
-
-        # bat_max = np.array(self.lossValues['bat_max']).flatten()
-        # bat_max_value = np.array(self.lossValues['bat_max_value']).flatten()
-        # bat_max_violation = np.array(self.lossValues['bat_max_violation']).flatten()
-        # fig, ax = plt.subplots(3, figsize=(10,8))
-        # ax[0].plot(bat_max, label='bat_max')
-        # ax[0].legend()
-        # ax[1].plot(bat_max_value, label='bat_max_value')
-        # ax[1].set(xlim=[0,2000])
-        # ax[1].legend()
-        # ax[2].plot(bat_max_violation, label='bat_max_violation')
-        # ax[2].set(xlim=[0,2000])
-        # ax[2].legend()
-        # plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
-        # plt.tight_layout()
-        # Path(f'{self.savePath}/debug/Loss').mkdir(exist_ok=True, parents=True)
-        # fig.savefig(f"{self.savePath}/debug/Loss/epoch{output['train_epoch']}")
-        # plt.close(fig)
 
         self.ResetTrainValues()
 

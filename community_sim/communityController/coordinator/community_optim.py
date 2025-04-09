@@ -60,9 +60,9 @@ class Coordinator():
         i = 0
         for key, value in self.transInfo.items():
             self.predictedTransLoad[i,:] = np.sum(self.predictedLoad[int(value['Buildings'][0]):int(value['Buildings'][-1]), :], axis=0)
-            self.overloadList.append(self.predTransLoad[i,:] - value['rating'])
+            self.overloadList.append(self.predictedTransLoad[i,:] - value['rating'])
             # Check if overload occurs at any point
-            if np.any(self.predTransLoad[i,:] >= 0):
+            if np.any(self.predictedTransLoad[i,:] >= 0):
                 overload = True
             i += 1
 
