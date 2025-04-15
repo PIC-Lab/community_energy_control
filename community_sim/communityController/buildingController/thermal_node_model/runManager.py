@@ -17,7 +17,7 @@ class RunManager():
         self.name = name
         dirName = os.path.dirname(__file__)
         self.saveDir = os.path.join(dirName, saveDir)
-        repo = Repo()
+        repo = Repo(os.path.join(dirName, '../../../../'))
         self.commit = repo.git.rev_parse(repo.head, short=True)
 
         self.models = {}

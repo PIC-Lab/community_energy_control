@@ -822,6 +822,8 @@ class ControllerSystem(NeuromancerModel):
         self.hsizes = manager.models[name]['hsizes']
         self.n_samples = manager.models[name]['train_params']['n_samples']
 
+        self.trainParams = manager.models[name]['train_params']
+
         self.batSize = 16.4
         self.ratedKW = 9.6
 
@@ -963,8 +965,8 @@ class ControllerSystem(NeuromancerModel):
                                      input_keys=["u"],
                                      system_keys=['y'],
                                      ic_keys=['xn'],
-                                     num_steps=5,
-                                     step_size=15,
+                                     num_steps=self.trainParams['projHVAC_steps'],
+                                     step_size=self.trainParams['projHVAC_size'],
                                      decay=0.1,
                                      name='proj_hvac')
         
@@ -973,8 +975,8 @@ class ControllerSystem(NeuromancerModel):
                                          input_keys=['u_bat'],
                                          system_keys=['stored'],
                                          ic_keys=['stored'],
-                                         num_steps=10,
-                                         step_size=10,
+                                         num_steps=self.trainParams['projBat_steps'],
+                                         step_size=self.trainParams['projBat_size'],
                                          decay=0.1,
                                          name='proj_bat')
 

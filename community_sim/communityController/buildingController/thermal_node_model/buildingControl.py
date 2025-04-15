@@ -35,9 +35,10 @@ def Main():
             print(f"No name given, defaulting to {name}")
     else:
         loadRun = False
-        name = "alf_AllBuildings"
+        # name = "alf_AllBuildings"
+        name = 'projGrad_fine_4'
 
-    manager = runManager.RunManager(name)
+    manager = runManager.RunManager(name, saveToLatest=False)
 
     # Load a previous run based on a name
     if loadRun:
@@ -153,7 +154,11 @@ def Main():
                 'lr': 0.001,
                 'nsteps': 60,
                 'batch_size': 20,
-                'n_samples': 200
+                'n_samples': 200,
+                'projHVAC_steps': 10,
+                'projHVAC_size': 35,
+                'projBat_steps': 15,
+                'projBat_size': 35
             }
         }
         # -----------------------------
