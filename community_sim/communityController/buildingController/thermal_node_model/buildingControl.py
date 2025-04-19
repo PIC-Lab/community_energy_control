@@ -15,7 +15,7 @@ def Main():
     # torch.manual_seed(0)
     # If cuda is available, run on GPU
     if torch.cuda.is_available():
-        dev = 'cuda:1'
+        dev = 'cuda:0'
         print("CUDA is available, running on GPU")
     else:
         dev = "cpu"
@@ -36,7 +36,7 @@ def Main():
     else:
         loadRun = False
         # name = "alf_AllBuildings"
-        name = 'projGrad_fine_4'
+        name = 'projGrad_fine_6'
 
     manager = runManager.RunManager(name, saveToLatest=False)
 
@@ -158,7 +158,7 @@ def Main():
                 'projHVAC_steps': 10,
                 'projHVAC_size': 35,
                 'projBat_steps': 15,
-                'projBat_size': 35
+                'projBat_size': 10
             }
         }
         # -----------------------------

@@ -69,7 +69,7 @@ class FlexibilityMetricPredictor():
         # Path('Saved Models/Forecast/' + metric_abb).mkdir(parents=True, exist_ok=True)
         # Path('Saved Figures/Forecast/' + metric_abb).mkdir(parents=True, exist_ok=True)
         
-        raw_dataset = pd.read_csv(filePath, usecols=column_names)
+        raw_dataset = pd.read_csv(filePath, usecols=column_names, nrows=14400)
         
         dataset = raw_dataset.copy()
         # dataset = raw_dataset.iloc[0:20*24*timesteps].copy()
@@ -78,7 +78,7 @@ class FlexibilityMetricPredictor():
         # Dataset feature engineering
         dataset['HVAC Past State'].replace([1,2,3,4], [-1,-1,1,1], inplace=True)
         
-        date_time = pd.to_datetime(dataset.pop('Date/Time'))
+        date_time = pd.DatetimeIndex(dataset.pop('Date/Time'), freq='infer')
         dataset.index = date_time
         # timestamp_s = date_time.map(pd.Timestamp.timestamp)
         
@@ -125,7 +125,7 @@ class FlexibilityMetricPredictor():
         sm.graphics.tsa.plot_pacf(train_labels, lags=40, ax=ax[1])
         fig.savefig('Saved Figures/autocorrelations.png')
 
-        arma_mod20 = ARIMA(train_labels, exog=train_df, order=(2,0,0))
+        arma_mod20 = ARIMA(train_labels, exog=train_df, order=(3,1,1))
 
         self.model = arma_mod20.fit()
 
@@ -139,7 +139,7 @@ class FlexibilityMetricPredictor():
         fig.savefig('Saved Figures/residuals.png')
 
         fig, ax = plt.subplots(figsize=(12,8))
-        qqplot(stats.normaltest(resid), line="q", ax=ax, fit=True)
+        qqplot(resid, line="q", ax=ax, fit=True)
         fig.savefig('Saved Figures/qqplot.png')
 
         fig, ax = plt.subplots(1,2, figsize=(12,8))
@@ -147,7 +147,12 @@ class FlexibilityMetricPredictor():
         sm.graphics.tsa.plot_pacf(resid, lags=40, ax=ax[1])
         fig.savefig('Saved Figures/residual autocorrelations.png')
 
-        # self.model.predict()
+        self.test_df['forecast'] = self.model.predict(start=self.test_df.index[0], end=self.test_df.index[-1], dynamic=True,
+                                                      exog=self.test_df[['HVAC Past State', 'Outdoor Air Temperature (C)', 'Indoor Air Temperature (C)', 'Heating On']])
+
+        fig, ax = plt.subplots(figsize=(12,8))
+        self.test_df[['Maintainable Duration:Heating (min)', 'forecast']].plot(ax=ax)
+        fig.savefig('Saved Figures/forecast.png')
 
     def PredictMetrics(self):
         '''

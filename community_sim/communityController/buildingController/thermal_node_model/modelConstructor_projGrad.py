@@ -960,7 +960,7 @@ class ControllerSystem(NeuromancerModel):
         constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, hvac_lower]
         # constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_lower, bat_upper]
 
-        proj_hvac = GradientProjSystemDyn(system=System([thermal, out_obs], nsteps=self.nsteps, name='thermal dynamics'),
+        proj_hvac = solvers.GradientProjSystemDyn(system=System([thermal, out_obs], nsteps=self.nsteps, name='thermal dynamics'),
                                      constraints=[state_lower_bound_penalty, state_upper_bound_penalty, hvac_lower],
                                      input_keys=["u"],
                                      system_keys=['y'],
@@ -970,7 +970,7 @@ class ControllerSystem(NeuromancerModel):
                                      decay=0.1,
                                      name='proj_hvac')
         
-        proj_bat = GradientProjSystemDyn(system=System([batModel], nsteps=self.nsteps, name='battery dynamics', drop_init_cond=True),
+        proj_bat = solvers.GradientProjSystemDyn(system=System([batModel], nsteps=self.nsteps, name='battery dynamics', drop_init_cond=True),
                                          constraints = [bat_life_lower_bound_penalty],
                                          input_keys=['u_bat'],
                                          system_keys=['stored'],
@@ -1199,75 +1199,76 @@ class ControllerSystem(NeuromancerModel):
         plt.savefig(self.saveDir+'/simplified_rollout', dpi=fig.dpi)
         plt.close(fig)
 
-        # Solution to pNLP via Neuromancer
-        data['name'] = 'test'
-        model_out = self.problem(data)
-        x_nm = model_out['test_' + "y"].detach().numpy()
-        y_nm = model_out['test_' + "u"].detach().numpy()
+        if len(self.problem.nodes) > 1:
+            # Solution to pNLP via Neuromancer
+            data['name'] = 'test'
+            model_out = self.problem(data)
+            x_nm = model_out['test_' + "y"].detach().numpy()
+            y_nm = model_out['test_' + "u"].detach().numpy()
 
-        # intermediate projection steps
-        sol_map = self.problem.nodes[0]
-        proj = self.problem.nodes[1]
-        num_steps = proj.num_steps
-        x_proj = sol_map(data)
-        proj.num_steps = 1    # set projections steps to 1 for visualisation
-        X_projected = [np.concatenate([x_proj['y'].detach().numpy(), x_proj['u'].detach().numpy()],axis=2)]
-        for steps in range(num_steps):
-            proj_inputs = {**data, **x_proj}
-            x_proj = proj(proj_inputs)
-            X_projected.append(np.concatenate([x_proj['y'].detach().numpy(), x_proj['u'].detach().numpy()], axis=2))
-        projected_steps = np.concatenate(X_projected, axis=0)
-        proj.num_steps = num_steps
+            # intermediate projection steps
+            sol_map = self.problem.nodes[0]
+            proj = self.problem.nodes[1]
+            num_steps = proj.num_steps
+            x_proj = sol_map(data)
+            proj.num_steps = 1    # set projections steps to 1 for visualisation
+            X_projected = [np.concatenate([x_proj['y'].detach().numpy(), x_proj['u'].detach().numpy()],axis=2)]
+            for steps in range(num_steps):
+                proj_inputs = {**data, **x_proj}
+                x_proj = proj(proj_inputs)
+                X_projected.append(np.concatenate([x_proj['y'].detach().numpy(), x_proj['u'].detach().numpy()], axis=2))
+            projected_steps = np.concatenate(X_projected, axis=0)
+            proj.num_steps = num_steps
 
-        # plot optimal solutions CasADi vs Neuromancer
-        fig, ax = plt.subplots(2)
-        ax[0].plot(x_nm[0,:,0], linewidth=lw, label='problem')
-        ax[0].plot(trajectories['y'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
-        ax[0].plot(Ymax, color='black')
-        ax[0].plot(Ymin, color='black')
-        # plot projected steps
-        ax[1].plot(y_nm[0,:,0], linewidth=lw, label='problem')
-        ax[1].plot(trajectories['u'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
-        # ax[1].legend()
-        for i in range(projected_steps.shape[0]):
-        # for i in range(5):
-        # i = 15
-            ax[0].plot(projected_steps[i,:, 0], label='projection steps', zorder=-1)
-            ax[1].plot(projected_steps[i,:, 1], label='projection steps', zorder=-1)
-        plt.savefig(self.saveDir+'/grad_proj_hvac', dpi = fig.dpi)
+            # plot optimal solutions CasADi vs Neuromancer
+            fig, ax = plt.subplots(2)
+            ax[0].plot(x_nm[0,:,0], linewidth=lw, label='problem')
+            ax[0].plot(trajectories['y'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
+            ax[0].plot(Ymax, color='black')
+            ax[0].plot(Ymin, color='black')
+            # plot projected steps
+            ax[1].plot(y_nm[0,:,0], linewidth=lw, label='problem')
+            ax[1].plot(trajectories['u'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
+            # ax[1].legend()
+            for i in range(projected_steps.shape[0]):
+            # for i in range(5):
+            # i = 15
+                ax[0].plot(projected_steps[i,:, 0], label='projection steps', zorder=-1)
+                ax[1].plot(projected_steps[i,:, 1], label='projection steps', zorder=-1)
+            plt.savefig(self.saveDir+'/grad_proj_hvac', dpi = fig.dpi)
 
 
-        x_nm = model_out['test_' + "stored"].detach().numpy()
-        y_nm = model_out['test_' + "u_bat"].detach().numpy()
-        # intermediate projection steps
-        sol_map = self.problem.nodes[0]
-        proj = self.problem.nodes[2]
-        num_steps = proj.num_steps
-        x_proj = sol_map(data)
-        proj.num_steps = 1    # set projections steps to 1 for visualisation
-        X_projected = [np.concatenate([x_proj['stored'].detach().numpy(), x_proj['u_bat'].detach().numpy()],axis=2)]
-        for steps in range(num_steps):
-            proj_inputs = {**data, **x_proj}
-            x_proj = proj(proj_inputs)
-            X_projected.append(np.concatenate([x_proj['stored'].detach().numpy(), x_proj['u_bat'].detach().numpy()], axis=2))
-        projected_steps = np.concatenate(X_projected, axis=0)
-        proj.num_steps = num_steps
+            x_nm = model_out['test_' + "stored"].detach().numpy()
+            y_nm = model_out['test_' + "u_bat"].detach().numpy()
+            # intermediate projection steps
+            sol_map = self.problem.nodes[0]
+            proj = self.problem.nodes[2]
+            num_steps = proj.num_steps
+            x_proj = sol_map(data)
+            proj.num_steps = 1    # set projections steps to 1 for visualisation
+            X_projected = [np.concatenate([x_proj['stored'].detach().numpy(), x_proj['u_bat'].detach().numpy()],axis=2)]
+            for steps in range(num_steps):
+                proj_inputs = {**data, **x_proj}
+                x_proj = proj(proj_inputs)
+                X_projected.append(np.concatenate([x_proj['stored'].detach().numpy(), x_proj['u_bat'].detach().numpy()], axis=2))
+            projected_steps = np.concatenate(X_projected, axis=0)
+            proj.num_steps = num_steps
 
-        # plot optimal solutions CasADi vs Neuromancer
-        fig, ax = plt.subplots(2)
-        ax[0].plot(x_nm[0,:,0], linewidth=lw, label='problem')
-        ax[0].plot(trajectories['stored'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
-        ax[0].plot(trajectories['batRef'].detach().cpu().reshape(nsteps_test, 1), color='black')
-        # plot projected steps
-        ax[1].plot(y_nm[0,:,0], linewidth=lw, label='problem')
-        ax[1].plot(trajectories['u_bat'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
-        # ax[1].legend()
-        for i in range(projected_steps.shape[0]):
-        # for i in range(5):
-        # i = 15
-            ax[0].plot(projected_steps[i,:, 0], label='projection steps', zorder=-1)
-            ax[1].plot(projected_steps[i,:, 1], label='projection steps', zorder=-1)
-        plt.savefig(self.saveDir+'/grad_proj_bat', dpi = fig.dpi)
+            # plot optimal solutions CasADi vs Neuromancer
+            fig, ax = plt.subplots(2)
+            ax[0].plot(x_nm[0,:,0], linewidth=lw, label='problem')
+            ax[0].plot(trajectories['stored'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
+            ax[0].plot(trajectories['batRef'].detach().cpu().reshape(nsteps_test, 1), color='black')
+            # plot projected steps
+            ax[1].plot(y_nm[0,:,0], linewidth=lw, label='problem')
+            ax[1].plot(trajectories['u_bat'].detach().numpy().reshape(-1,1), linewidth=lw, label='traj')
+            # ax[1].legend()
+            for i in range(projected_steps.shape[0]):
+            # for i in range(5):
+            # i = 15
+                ax[0].plot(projected_steps[i,:, 0], label='projection steps', zorder=-1)
+                ax[1].plot(projected_steps[i,:, 1], label='projection steps', zorder=-1)
+            plt.savefig(self.saveDir+'/grad_proj_bat', dpi = fig.dpi)
 
         # Plot training and validation loss
         self.PlotLoss()
@@ -1434,98 +1435,6 @@ class iMODE(blocks.Block):
             x = nlin(lin(x))
             x = torch.cat([xin,x],1)
         return x
-    
-from neuromancer.gradients import gradient
-class GradientProjSystemDyn(solvers.Solver):
-    '''
-    '''
-    def __init__(self, system, constraints, input_keys, output_keys=[], system_keys=[], ic_keys=[],
-                 decay=0.1, num_steps=1, step_size=0.01, energy_update=True, name=None):
-        '''
-        '''
-        super().__init__(constraints=constraints,
-                         input_keys=input_keys, output_keys=output_keys,
-                         name=name)
-        self.system = system
-        self.num_steps = num_steps
-        self.step_size = step_size
-        self.input_keys = input_keys
-        self.system_keys = system_keys
-        self.decay = decay
-        self.energy_update = energy_update
-        self.ic_keys = ic_keys
-
-        self.output_keys += system_keys
-
-    def _constraints_check(self):
-        '''
-        '''
-        for con in self.constraints:
-            assert str(con.comparator) in ['lt', 'gt'], \
-                f'constraint {con} must be inequality (lt or gt), but it is {str(con.comparator)}'
-
-    def eval_system_states(self, input_dict):
-        '''
-        '''
-        data = input_dict.copy()
-        for key in self.ic_keys:
-            data[key] = data[key][:,0:1,:].detach()
-        for key in self.system_keys:
-            if not(key in self.ic_keys):
-                data.pop(key).detach()
-        data = self.system(data)
-        return data
-            
-    def con_viol_energy(self, input_dict):
-        '''
-        '''
-        data = self.eval_system_states(input_dict)
-        C_violations = []
-        for con in self.constraints:
-            output = con(data)
-            cviolation = output[con.output_keys[2]]
-            C_violations.append(cviolation)
-        C_violations = torch.cat(C_violations, dim=-1)
-        energy = torch.mean(torch.abs(C_violations), dim=1)
-        return energy, data
-
-    def forward(self, data):
-        '''
-        '''
-        # init output
-        output_data = data.copy()
-        if self.energy_update:
-            data = output_data
-        # init decay rate
-        d = 1
-        # projected gradient
-        for k in range(self.num_steps):
-            # update energy
-            energy, data = self.con_viol_energy(data)
-            if self.energy_update:
-                output_data = data
-            
-            for in_key, out_key in zip(self.input_keys, self.output_keys):
-                # get grad
-                x = data[in_key]
-                step = torch.autograd.grad(energy, x, grad_outputs=torch.ones_like(energy), create_graph=True)[0]
-                
-                assert step.shape == x.shape, \
-                    f'Dimensions of gradient step {step.shape} should be equal to dimensions' \
-                    f'{x.shape} of a single variable {in_key}'
-                # update
-                x = x - d * self.step_size*step
-                d = d - self.decay * d
-                output_data.pop(out_key).detach()
-                output_data[out_key] = x
-
-            for key in self.system_keys:
-                # Updated system states
-                states = self.eval_system_states(output_data)
-                output_data.pop(key).detach()
-                output_data[key] = states[key]
-                
-        return output_data
 
 # Custom debug and callback code
 class Callback_Basic(Callback):

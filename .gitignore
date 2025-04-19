@@ -179,3 +179,6 @@ community_sim/34BusSystem.zip
 # Deploy file
 deploy/
 
+# Pickle files
+*.pickle
+
