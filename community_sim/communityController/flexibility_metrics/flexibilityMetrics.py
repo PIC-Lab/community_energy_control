@@ -4,6 +4,8 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.graphics.api import qqplot
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.seasonal import seasonal_decompose, MSTL
 from scipy import stats
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -68,6 +70,11 @@ class FlexibilityMetricPredictor():
         # Set up file structure for saving models and figures
         # Path('Saved Models/Forecast/' + metric_abb).mkdir(parents=True, exist_ok=True)
         # Path('Saved Figures/Forecast/' + metric_abb).mkdir(parents=True, exist_ok=True)
+
+        full_dataset = pd.read_csv(filePath, usecols=column_names)
+        fig = plt.figure(figsize=(12,5))
+        plt.plot(full_dataset['Maintainable Duration:Heating (min)'])
+        fig.savefig('Saved Figures/full label.png')
         
         raw_dataset = pd.read_csv(filePath, usecols=column_names, nrows=14400)
         
@@ -97,13 +104,14 @@ class FlexibilityMetricPredictor():
         # Probably should be done using moving averages
         train_mean = dataset.mean()
         train_std = dataset.std()
-        normValues = [train_mean, train_std]
         
         dataset = (dataset - train_mean) / train_std
 
         dataset = pd.concat([dataset, labels_temp], axis=1)
 
         print(dataset.describe().transpose())
+
+        print(dataset.index.freq)
 
         # Split the data
         column_indices = {name: i for i, name in enumerate(dataset.columns)}
@@ -125,11 +133,24 @@ class FlexibilityMetricPredictor():
         sm.graphics.tsa.plot_pacf(train_labels, lags=40, ax=ax[1])
         fig.savefig('Saved Figures/autocorrelations.png')
 
-        arma_mod20 = ARIMA(train_labels, exog=train_df, order=(3,1,1))
+        adfuller_test(train_labels)
 
-        self.model = arma_mod20.fit()
+        result = seasonal_decompose(train_labels, model='additive', period=20)
+        fig = result.plot()
+        fig.savefig('Saved Figures/seasonal decomp.png')
 
-        self.model.save('arima.pickle')
+        stl = MSTL(train_labels, periods=(6, 20*24))
+        res = stl.fit()
+        fig = res.plot()
+        fig.savefig('Saved Figures/mstl res.png')
+
+        # Model setup and fitting
+        model = ARIMA(train_labels, exog=train_df, order=(3,1,1))
+        # model = sm.tsa.statespace.SARIMAX(train_labels, exog=train_df, order=(1,1,1), seasonal_order=(1,1,1,12))
+
+        self.model = model.fit()
+
+        self.model.save('model.pickle')
         
     def PlotPredictor(self):
         resid = self.model.resid
@@ -158,3 +179,13 @@ class FlexibilityMetricPredictor():
         '''
         '''
         pass
+
+def adfuller_test(sales):
+    result = adfuller(sales)
+    labels = ['ADF Test Statistic','p-value','#Lags Used','Number of Observations Used']
+    for value,label in zip(result,labels):
+        print(label + ' : ' + str(value))
+    if result[1] <= 0.05:
+        print("P value is less than 0.05 that means we can reject the null hypothesis(Ho). Therefore we can conclude that data has no unit root and is stationary")
+    else:
+        print("Weak evidence against null hypothesis that means time series has a unit root which indicates that it is non-stationary ")

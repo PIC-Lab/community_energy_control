@@ -6,12 +6,18 @@ import json
 import logging
 from opendss_wrapper import OpenDSS
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.DEBUG)
+initTime = dt.datetime.now()
 
 with open('simParams.json') as fp:
     simParams = json.load(fp)
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(simParams['logLevel'])
+
+logger.info("----- OpenDSS Federate Logs -----")
+logger.info(f"Started at {initTime}")
+logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
 
 # Folder and File locations
 MainDir = os.path.abspath(os.path.dirname(__file__))
@@ -39,9 +45,9 @@ federate_name = h.helicsFederateGetName(fed)
 logger.info(f"Created federate {federate_name}")
 
 sub_count = h.helicsFederateGetInputCount(fed)
-logger.debug(f"\tNumber of subscriptions: {sub_count}")
+logger.info(f"\tNumber of subscriptions: {sub_count}")
 pub_count = h.helicsFederateGetPublicationCount(fed)
-logger.debug(f"\tNumber of publications: {pub_count}")
+logger.info(f"\tNumber of publications: {pub_count}")
 
 # Diagnostics to confirm JSON config correctly added the required
 # publications, and subscriptions.
@@ -51,18 +57,18 @@ for i in range(0, sub_count):
     sub_name = h.helicsInputGetName(ipt)
     sub_name = sub_name[sub_name.find('/')+1:]
     subid[sub_name] = ipt
-    logger.debug(f"\tRegistered subscription---> {sub_name}")
+    logger.info(f"\tRegistered subscription---> {sub_name}")
 
 pubid = {}
 for i in range(0, pub_count):
     pub = h.helicsFederateGetPublicationByIndex(fed, i)
     pub_name = h.helicsPublicationGetName(pub)
     pubid[pub_name] = pub
-    logger.debug(f"\tRegistered publication---> {pub_name}")
+    logger.info(f"\tRegistered publication---> {pub_name}")
 
 # ----- Create DSS Network -----
 MasterFile = os.path.join(ModelDir, 'Master.dss')
-start_time = dt.datetime.strptime(simParams['start'], "%m/%d/%y")
+start_time = dt.datetime.strptime(simParams['start'], "%m/%d/%y %H:%M")
 stepsize = pd.Timedelta(simParams['step'])
 duration = pd.Timedelta(simParams['duration'])
 end_time = start_time + duration

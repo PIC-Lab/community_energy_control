@@ -10,7 +10,7 @@ from communityController.flexibility_metrics.flexibilityMetrics import Flexibili
 class CommunityController:
     '''
     '''
-    def __init__(self, controlAliasList):
+    def __init__(self, controlAliasList, runName):
         '''
         '''
         self.controlAliasList = controlAliasList
@@ -26,7 +26,7 @@ class CommunityController:
 
         self.dirName = os.path.dirname(__file__)
 
-        self.ControllerInit()
+        self.ControllerInit(runName)
         self.CoordinatorInit()
         self.FlexibilityInit()
 
@@ -36,7 +36,7 @@ class CommunityController:
         self.coordinator = Coordinator(len(self.controlAliasList), self.nsteps)
         self.coordinator.AdjustInit()
 
-    def ControllerInit(self):
+    def ControllerInit(self, runName):
         '''
         '''
         # if self.mode == 'deploy':
@@ -53,7 +53,7 @@ class CommunityController:
                 if building['house_id'] == alias:
                     devices = building['devices']
                     break
-            self.controllerList.append(BuildingController(alias, devices))
+            self.controllerList.append(BuildingController(alias, devices, runName))
 
     def FlexibilityInit(self):
         '''

@@ -4,7 +4,7 @@ import shutil
 from git import Repo
 
 class RunManager():
-    def __init__(self, name, saveDir='savedRuns', saveToLatest=True):
+    def __init__(self, name, saveDir='savedRuns', saveToLatest=True, notes=''):
         '''
         Constructor
         :param name: (str) name of the run that it will be saved as
@@ -24,6 +24,8 @@ class RunManager():
         self.dataset = {"path": '', "sliceBool": False, "slice_idx": [0,0]}
 
         self.tempBounds = []
+
+        self.notes = notes
 
         if saveToLatest:
             self.runPath = self.saveDir+'/latestRun/'
@@ -81,6 +83,11 @@ class RunManager():
             self.commit = runJson['commit']
         else:
             self.commit = 'Created in an older version of RunManager'
+
+        if 'notes' in runJson.keys():
+            self.notes = runJson['notes']
+        else:
+            self.notes = ''
 
         if runName != 'latestRun':
             self.runPath = self.saveDir+'/'+self.name+'/'

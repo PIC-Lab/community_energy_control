@@ -10,12 +10,18 @@ import numpy as np
 
 # from eventParser import ParseControlEvent
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.DEBUG)
+initTime = dt.datetime.now()
 
 with open('simParams.json') as fp:
     simParams = json.load(fp)
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(simParams['logLevel'])
+
+logger.info('----- Alfalfa Federate Logs -----')
+logger.info(f"Start at {initTime}")
+logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
 
 # ----- HELICS federate setup -----
 # Register federate from json
@@ -26,9 +32,9 @@ federate_name = h.helicsFederateGetName(fed)
 logger.info(f"Created federate {federate_name}")
 
 sub_count = h.helicsFederateGetInputCount(fed)
-logger.debug(f"\tNumber of subscriptions: {sub_count}")
+logger.info(f"\tNumber of subscriptions: {sub_count}")
 pub_count = h.helicsFederateGetPublicationCount(fed)
-logger.debug(f"\tNumber of publications: {pub_count}")
+logger.info(f"\tNumber of publications: {pub_count}")
 
 # Diagnostics to confirm JSON config correctly added the required
 # publications, and subscriptions.
@@ -38,24 +44,24 @@ for i in range(0, sub_count):
     sub_name = h.helicsInputGetName(ipt)
     sub_name = sub_name[sub_name.find('/')+1:]
     subid[sub_name] = ipt
-    logger.debug(f"\tRegistered subscription---> {sub_name}")
+    logger.info(f"\tRegistered subscription---> {sub_name}")
 
 pubid = {}
 for i in range(0, pub_count):
     pub = h.helicsFederateGetPublicationByIndex(fed, i)
     pub_name = h.helicsPublicationGetName(pub)
     pubid[pub_name] = pub
-    logger.debug(f"\tRegistered publication---> {pub_name}")
+    logger.info(f"\tRegistered publication---> {pub_name}")
 
 # Define parameters to run simulation
 # If you are using historian, you will need to search for this time period in Grafana dashboard to view results.
-start_time = dt.datetime.strptime(simParams['start'], "%m/%d/%y")
+start_time = dt.datetime.strptime(simParams['start'], "%m/%d/%y %H:%M")
 stepsize = pd.Timedelta(simParams['step'])
 duration = pd.Timedelta(simParams['duration'])
 warmup = pd.Timedelta(simParams['warmup'])
 start_warmup = start_time - warmup
 end_time = start_time + duration
-logger.debug(f"Run period: {start_warmup} to {end_time}")
+logger.info(f"Run period: {start_warmup} to {end_time}")
 
 # ----- Create and setup alfalfa simulation -----
 # Create new alfalfa client object
@@ -145,15 +151,6 @@ try:
             alf_outs = ac.get_outputs(site)
             alf_outs['Time'] = ac.get_sim_time(site)
 
-            # Push to control federates
-            # for key,value in controlInMap.items():
-            #     controllerList[i].sensorValues[key] = alf_outs[value]
-
-            # if simParams['testCase'] == 'base':
-            #     controllerList[i].HVAC_Control(forceMode=-1)
-            # elif simParams['testCase'] == 'MPC':
-            #     trajectories = controllerList[i].PredictiveControl(step)
-
             # Parse control events
             for controlSet in controlEvents:
                 location = controlSet['location']
@@ -162,12 +159,6 @@ try:
                     if 'Battery' in key:
                         continue
                     input_dicts[location][key] = value
-            # for alias, controlSet in controlEvents.items():
-            #     location = controlSet['location']
-            #     for key, value in controlSet['devices']:
-            #         if key == 'Battery':
-            #             continue
-            #         input_dicts[alias][value] = controlSet['status']
 
             # Push updates to inputs to alfalfa
             ac.set_inputs(site, input_dicts[alias])
@@ -194,7 +185,7 @@ try:
         # Advance the model
         if step < duration / stepsize:          # Don't advance alfalfa on the last iteration of the loop
             ac.advance(site_ids)
-            logger.debug(f"Model advanced to time: {ac.get_sim_time(site_ids[0])}")
+            logger.info(f"Model advanced to time: {ac.get_sim_time(site_ids[0])}")
 except KeyboardInterrupt:
     print('Keyboard interrupt received. Stopping simulation and saving current data.')
 

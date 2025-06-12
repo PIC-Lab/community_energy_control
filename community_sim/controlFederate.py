@@ -9,12 +9,18 @@ from communityController.communityController import CommunityController
 
 import helics as h          # Importing helics before torch will cause a segfault for some reason
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.DEBUG)
+initTime = dt.datetime.now()
 
 with open('simParams.json') as fp:
     simParams = json.load(fp)
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(simParams['logLevel'])
+
+logger.info("----- Control Federate Logs -----")
+logger.info(f"Started at {initTime}")
+logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
 
 with open('indexMapping.json') as fp:
     sensorIdxMapping = json.load(fp)        # Map sensor indices to simulation indices
@@ -35,9 +41,9 @@ federate_name = h.helicsFederateGetName(fed)
 logger.info(f"Created federate {federate_name}")
 
 sub_count = h.helicsFederateGetInputCount(fed)
-logger.debug(f"\tNumber of subscriptions: {sub_count}")
+logger.info(f"\tNumber of subscriptions: {sub_count}")
 pub_count = h.helicsFederateGetPublicationCount(fed)
-logger.debug(f"\tNumber of publications: {pub_count}")
+logger.info(f"\tNumber of publications: {pub_count}")
 
 # Diagnostics to confirm JSON config correctly added the required
 # publications, and subscriptions.
@@ -47,25 +53,25 @@ for i in range(0, sub_count):
     sub_name = h.helicsInputGetName(ipt)
     sub_name = sub_name[sub_name.find('/')+1:]
     subid[sub_name] = ipt
-    logger.debug(f"\tRegistered subscription---> {sub_name}")
+    logger.info(f"\tRegistered subscription---> {sub_name}")
 
 pubid = {}
 for i in range(0, pub_count):
     pub = h.helicsFederateGetPublicationByIndex(fed, i)
     pub_name = h.helicsPublicationGetName(pub)
     pubid[pub_name] = pub
-    logger.debug(f"\tRegistered publication---> {pub_name}")
+    logger.info(f"\tRegistered publication---> {pub_name}")
 
 # Define time parameters of simulation
-start_time = dt.datetime.strptime(simParams['start'], "%m/%d/%y")
+start_time = dt.datetime.strptime(simParams['start'], "%m/%d/%y %H:%M")
 stepsize = pd.Timedelta(simParams['step'])
 duration = pd.Timedelta(simParams['duration'])
 end_time = start_time + duration
-logger.debug(f"Run period: {start_time} to {end_time}")
+logger.info(f"Run period: {start_time} to {end_time}")
 
 # ----- Control setup -----
 aliasesSensorIdx = [simIdxMapping[alias] for alias in simParams['controlledAliases']]       # Convert list of controlled buildings from sim idx to sensor idx
-controller = CommunityController(aliasesSensorIdx)
+controller = CommunityController(aliasesSensorIdx, simParams['controllerRun'])
 
 # ----- Primary co-simulation loop -----
 # Define lists for data collection

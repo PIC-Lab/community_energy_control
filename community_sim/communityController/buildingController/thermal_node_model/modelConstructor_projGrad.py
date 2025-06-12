@@ -960,7 +960,7 @@ class ControllerSystem(NeuromancerModel):
         constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, hvac_lower]
         # constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_lower, bat_upper]
 
-        proj_hvac = solvers.GradientProjSystemDyn(system=System([thermal, out_obs], nsteps=self.nsteps, name='thermal dynamics'),
+        proj_hvac = solvers.GradientProjSystemDyn(nodes=[System([thermal, out_obs], nsteps=self.nsteps, name='thermal dynamics')],
                                      constraints=[state_lower_bound_penalty, state_upper_bound_penalty, hvac_lower],
                                      input_keys=["u"],
                                      system_keys=['y'],
@@ -970,7 +970,7 @@ class ControllerSystem(NeuromancerModel):
                                      decay=0.1,
                                      name='proj_hvac')
         
-        proj_bat = solvers.GradientProjSystemDyn(system=System([batModel], nsteps=self.nsteps, name='battery dynamics', drop_init_cond=True),
+        proj_bat = solvers.GradientProjSystemDyn(nodes=[System([batModel], nsteps=self.nsteps, name='battery dynamics', drop_init_cond=True)],
                                          constraints = [bat_life_lower_bound_penalty],
                                          input_keys=['u_bat'],
                                          system_keys=['stored'],

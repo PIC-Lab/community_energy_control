@@ -1,8 +1,11 @@
 {
-    "start": "07/01/24",
+    "start": "07/01/24 00:00",
     "step": "1m",
     "duration": "1D",
     "warmup": "5m",
     "testCase": "base",
-    "controlledAliases": ["4"]
+    "controlledAliases": ["4"],
+    "logLevel": "INFO",
+    "resultsDir": "results/",
+    "controllerRun": "projGrad_fine_5"
 }

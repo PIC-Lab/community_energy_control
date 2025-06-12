@@ -21,7 +21,7 @@ def Main():
         dev = "cpu"
         print("CUDA is not available, running on CPU")
     device = torch.device(dev)
-    device = torch.device("cpu")
+    # device = torch.device("cpu")
 
     # Check if to load a previous run
     print("---Run Manager---")
@@ -38,7 +38,7 @@ def Main():
         # name = "alf_AllBuildings"
         name = 'projGrad_fine_6'
 
-    manager = runManager.RunManager(name, saveToLatest=False)
+    manager = runManager.RunManager(name, saveToLatest=True)
 
     # Load a previous run based on a name
     if loadRun:

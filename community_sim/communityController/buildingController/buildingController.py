@@ -21,7 +21,7 @@ class BuildingController:
         pv: (ndarray[float]) predicted PV generation
         dist: (ndarray[float]) predicted disturbances (outdoor temperature)
     """
-    def __init__(self, id, devices, train=False):
+    def __init__(self, id, devices, runName, train=False):
         """
         Constructor
         Parameters:
@@ -32,6 +32,7 @@ class BuildingController:
         self.sensorValues = {'indoorAirTemp': 21, 'batterySOC': 8.2}
         self.buildingID = id
         self.devices = devices
+        self.runName = runName
 
         self.controlEvents = []
 
@@ -190,20 +191,11 @@ class BuildingController:
 
         device = torch.device("cpu")
 
-        # ----- Make sure you run prepareRun.py first -----
-        run = 'latestRun'
-        # run = 'bat_AB_test_2'
-        # run = 'bat_AB_test_3'
-        # run = 'alf_AllBuildings_1stPass'
-        run = 'projGrad_fine_5'
-        # run = 'projGrad_base'
-        # --------------------------------------------------
-
         # Path relative to the directory the sim is being run in. Needs to be fixed
         filePath = os.path.join(self.dirName, 'thermal_node_model')
 
-        manager = RunManager(run, saveDir=f'{filePath}/deployModels')
-        manager.LoadRunJson(run)
+        manager = RunManager(self.runName, saveDir=f'{filePath}/deployModels')
+        manager.LoadRunJson(self.runName)
         self.norm = Normalizer()
         self.norm.load(f"{manager.runPath}norm/{self.buildingID}/")
 
