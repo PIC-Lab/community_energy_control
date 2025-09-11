@@ -9,20 +9,65 @@ from statsmodels.tsa.seasonal import seasonal_decompose, MSTL
 from scipy import stats
 from pathlib import Path
 import matplotlib.pyplot as plt
+import torch
 
-class FlexibilityMetricPredictor():
+import sys
+sys.path.insert(1, '../buildingController')
+from buildingController.thermal_node_model.modelConstructor import BuildingNode, BatteryModel        # type:ignore
+from buildingController.thermal_node_model.runManager import RunManager
+
+# from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, BatteryModel
+# from communityController.buildingController.thermal_node_model.runManager import RunManager
+
+class FlexibilityMetricPredictor:
     '''
     '''
 
-    def __init__(self):
+    def __init__(self, id, runName):
         '''
+        Constructor
+
+        :param id: (str) id of the building
+        :param runName: (str) name of saved training run to load the thermal model from
         '''
-        pass
+        self.buildingID = id
+        self.runName = runName
+
+        self.energyFlex = []
+
+        self.nsteps = 4*60
 
     def LoadPredictor(self):
         '''
         '''
+        self.LoadBoundsModel()
+
+        self.LoadEnergyModel()
+        
+    def LoadBoundsModel(self):
+        '''
+        '''
         self.model = sm.load('arima.pickle')
+
+    def LoadEnergyModel(self):
+        '''
+        '''
+        manager = RunManager(self.runName)
+
+        thermal = BuildingNode(nx=1,
+                               nu=1,
+                               nd=1,
+                               manager=manager,
+                               name='',
+                               device=torch.device('cpu'),
+                               saveDir='')
+        self.buildingThermal = thermal.DeployModel()
+
+        battery = BatteryModel(eff=0.95,
+                               capacity=15,
+                               nx=1,
+                               nu=1)
+        self.buildingBattery = BatteryModel.DeployModel(battery, nsteps=self.nsteps)
 
     def TrainPredictor(self):
         '''
@@ -41,12 +86,12 @@ class FlexibilityMetricPredictor():
         # Comment/uncomment these based on which metric you're forecasting
         # -------------- Flexibility bounds forecasting --------------
         # The order of this apparently matters, the prediction columns will get switched up in the other order for some reason
-        # column_names = ['Date/Time', 'Net Power (kW)', 'HVAC Past State', 'Outdoor Air Temperature (C)',
-        #                 'Indoor Air Temperature (C)', 'Hot Water Tank Temperature (C)',
-        #                 'High Envelope (kW)', 'Low Envelope (kW)']
-        # targetName = ['Low Envelope (kW)', 'High Envelope (kW)']
-        # inputs = column_names[:-len(targetName)]
-        # metric_abb = 'FB'
+        column_names = ['Date/Time', 'Net Power (kW)', 'HVAC Past State', 'Outdoor Air Temperature (C)',
+                        'Indoor Air Temperature (C)', 'Hot Water Tank Temperature (C)',
+                        'High Envelope (kW)', 'Low Envelope (kW)']
+        targetName = ['Low Envelope (kW)', 'High Envelope (kW)']
+        inputs = column_names[:-len(targetName)]
+        metric_abb = 'FB'
         # ------------------------------------------------------------
 
         # -------------- Energy flexibility forecasting --------------
@@ -59,12 +104,12 @@ class FlexibilityMetricPredictor():
         # metric_abb = 'EF_WH'
 
         # --- Heating/Cooling ---
-        column_names = ['Date/Time', 'HVAC Past State', 'Outdoor Air Temperature (C)',
-                        'Indoor Air Temperature (C)', 'Heating On',
-                        'Maintainable Duration:Heating (min)']
-        targetName = ['Maintainable Duration:Heating (min)']
-        inputs = column_names[:-len(targetName)]
-        metric_abb = 'EF_HVAC'
+        # column_names = ['Date/Time', 'HVAC Past State', 'Outdoor Air Temperature (C)',
+        #                 'Indoor Air Temperature (C)', 'Heating On',
+        #                 'Maintainable Duration:Heating (min)']
+        # targetName = ['Maintainable Duration:Heating (min)']
+        # inputs = column_names[:-len(targetName)]
+        # metric_abb = 'EF_HVAC'
         # ------------------------------------------------------------
 
         # Set up file structure for saving models and figures
@@ -73,7 +118,7 @@ class FlexibilityMetricPredictor():
 
         full_dataset = pd.read_csv(filePath, usecols=column_names)
         fig = plt.figure(figsize=(12,5))
-        plt.plot(full_dataset['Maintainable Duration:Heating (min)'])
+        plt.plot(full_dataset[targetName])
         fig.savefig('Saved Figures/full label.png')
         
         raw_dataset = pd.read_csv(filePath, usecols=column_names, nrows=14400)
@@ -123,6 +168,7 @@ class FlexibilityMetricPredictor():
         num_labels = len(targetName)
         label_indices = [column_indices[name] for name in targetName]
 
+        train_labels = train_df.pop(targetName[1])
         train_labels = train_df.pop(targetName[0])
         fig, ax = plt.subplots(figsize=(12,8))
         train_labels.plot(ax=ax)
@@ -145,8 +191,8 @@ class FlexibilityMetricPredictor():
         fig.savefig('Saved Figures/mstl res.png')
 
         # Model setup and fitting
-        model = ARIMA(train_labels, exog=train_df, order=(3,1,1))
-        # model = sm.tsa.statespace.SARIMAX(train_labels, exog=train_df, order=(1,1,1), seasonal_order=(1,1,1,12))
+        # model = ARIMA(train_labels, exog=train_df, order=(3,1,1))
+        model = sm.tsa.statespace.SARIMAX(train_labels, exog=train_df, order=(1,1,1), seasonal_order=(1,1,1,12))
 
         self.model = model.fit()
 
@@ -169,17 +215,77 @@ class FlexibilityMetricPredictor():
         fig.savefig('Saved Figures/residual autocorrelations.png')
 
         self.test_df['forecast'] = self.model.predict(start=self.test_df.index[0], end=self.test_df.index[-1], dynamic=True,
-                                                      exog=self.test_df[['HVAC Past State', 'Outdoor Air Temperature (C)', 'Indoor Air Temperature (C)', 'Heating On']])
+                                                      exog=self.test_df[['Net Power (kW)', 'HVAC Past State', 'Outdoor Air Temperature (C)', 'Indoor Air Temperature (C)', 'Hot Water Tank Temperature (C)']])
 
         fig, ax = plt.subplots(figsize=(12,8))
-        self.test_df[['Maintainable Duration:Heating (min)', 'forecast']].plot(ax=ax)
+        self.test_df[['High Envelope (kW)', 'forecast']].plot(ax=ax)
         fig.savefig('Saved Figures/forecast.png')
 
     def PredictMetrics(self):
         '''
         '''
+        self.PredictBounds()
+
+        self.PredictEnergy()
+
+    def PredictBounds(self):
+        '''
+        '''
         pass
 
+    def PredictEnergy(self, states, inputs, disturbances):
+        '''
+        '''
+        # HVAC flex
+        dur_hvac = []
+        for input in inputs['hvac']:
+            dur_hvac.append(self.HvacTraj(states['hvac'], input, disturbances['outdoor temp'], 18))
+
+        # Battery flex
+        dur_bat = []
+        for input in inputs['battery']:
+            dur_bat.append(self.BatteryTraj(states['battery'], input, None, 0))
+
+        for dur in dur_hvac:
+            self.energyFlex.append((0,dur))
+
+        for power, dur in zip(inputs['battery'], dur_bat):
+            self.energyFlex.append((power[0],dur))
+
+    def HvacTraj(self, state, control, disturbance, limit):
+        '''
+        '''
+        in_dict = {
+            'name': "hvac",
+            'u': control,
+            'd': disturbance,
+            'xn': state
+        }
+        out_dict = self.buildingThermal(in_dict)
+
+        limitCheck = (out_dict['y'] <= limit).nonzero()
+
+        if limitCheck.numel() == 0:
+            return self.nsteps
+        
+        return limitCheck[0][1]
+
+    def BatteryTraj(self, state, control, disturbance, limit):
+        '''
+        '''
+        in_dict = {
+            'stored': state,
+            'u_bat': control
+        }
+        out_dict = self.buildingBattery(in_dict)
+
+        limitCheck = (out_dict['stored'] <= limit).nonzero()
+
+        if limitCheck.numel() == 0:
+            return self.nsteps
+        
+        return limitCheck[0][1]
+        
 def adfuller_test(sales):
     result = adfuller(sales)
     labels = ['ADF Test Statistic','p-value','#Lags Used','Number of Observations Used']

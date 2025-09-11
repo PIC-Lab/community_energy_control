@@ -68,8 +68,8 @@ logger.info(f"Run period: {start_warmup} to {end_time}")
 ac = AlfalfaClient(host='http://localhost')
 
 # Define paths to models to by uploaded
-model_paths = list(Path('./building_models').iterdir())
-# model_paths = [Path('./building_models/4')]
+# model_paths = list(Path('./building_models').iterdir())
+model_paths = [Path('./building_models/4')]
 
 # Upload sites to alfalfa
 site_ids = ac.submit(model_paths)

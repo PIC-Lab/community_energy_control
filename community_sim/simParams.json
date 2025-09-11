@@ -5,7 +5,7 @@
     "warmup": "5m",
     "testCase": "base",
     "controlledAliases": ["4"],
-    "logLevel": "INFO",
+    "logLevel": "DEBUG",
     "resultsDir": "results/",
     "controllerRun": "projGrad_fine_5"
 }

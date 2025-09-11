@@ -20,7 +20,6 @@ class Coordinator():
         self.numBuildings = numBuildings
         self.nsteps = nsteps
 
-        self.reductionFactor = np.zeros((self.numBuildings, self.nsteps))
         self.predictedLoad = np.zeros((self.numBuildings, self.nsteps))
         self.predictedFlexibility = np.zeros((self.numBuildings, self.nsteps))
         self.baseLoad = np.zeros((len(self.transInfo.keys()), self.nsteps))
@@ -30,9 +29,6 @@ class Coordinator():
 
         self.overloadList = []
         self.predictedTransLoad = np.zeros((len(self.transInfo.keys()), self.nsteps))
-
-        self.count = 0
-        self.stepFrequency = 5      # Coordinator updates values every 5 minutes
 
         self.assessProb = AssessOptimization()
         self.adjustProb = AdjustOptimization(self.numBuildings, self.nsteps)
@@ -107,10 +103,10 @@ class Coordinator():
         Dispatch phase: Format desired consumption changes as control signals to be provided to each house
         '''
         if not(adjustValues['flexLoad'] is None):
-            self.reductionFactor = adjustValues['flexLoad'] / 100.0
+            self.usagePenalty = np.abs(self.predictedLoad - adjustValues['flexLoad'])
+            self.usagePenalty = self.usagePenalty / np.sum(self.usagePenalty)
         else:
             print('Optimization infeasible')
-            self.reductionFactor = np.ones((self.numBuildings, self.nsteps))
             self.adjustValues['flexLoad'] = np.zeros((self.numBuildings, self.nsteps))
 
     def Step(self):
@@ -119,16 +115,6 @@ class Coordinator():
 
         :return: (bool) whether or not the coordinator updated this step
         '''
-        self.count += 1
-        # Coordinator updates coordination signals at set timescale, not every minute
-        if not(self.stepFrequency % self.count == 0):
-            # Move reduction factor by one step, repeat last value
-            updatedFactor = self.reductionFactor
-            updatedFactor[:-1] = self.reductionFactor[1:]
-            updatedFactor[-1] = self.reductionFactor[-1]
-            return False
-            
-        self.count = 0
 
         self.usagePenalty -= self.stepFrequency * 0.01
         self.usagePenalty = np.clip(self.usagePenalty, a_min=0, a_max=100)

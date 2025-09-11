@@ -83,13 +83,13 @@ def Main():
         # Building thermal model
         thermalModelName = "buildingThermal"
         manager.models[thermalModelName] = {
-            'hsizes': [120,120],
+            'hsizes': [80,80],
             'train_params': {
                 'max_epochs': 1000,
                 'patience': 50,
                 'warmup': 100,
                 'lr': 0.0005,
-                'nsteps': 30,
+                'nsteps': 10,
                 'batch_size': 30
             }
         }
@@ -251,12 +251,11 @@ def Main():
         # dataset['I'] = dataset_norm['Price'].to_numpy()[:,np.newaxis]
 
         dataset = {}
-        dataset['X'] = dataset_norm['living space Air Temperature'].to_numpy()[:, np.newaxis]
+        dataset['X'] = np.column_stack([dataset_norm['living space Air Temperature'].to_numpy(),
+                                        dataset_norm['Electricity:HVAC'].to_numpy()])
         dataset['U'] = dataset_norm['cooling setpoint'].to_numpy()[:, np.newaxis]
         dataset['D'] = dataset_norm['Site Outdoor Air Temperature'].to_numpy()[:, np.newaxis]
         dataset['I'] = dataset_norm['Price'].to_numpy()[:,np.newaxis]
-        dataset['mode'] = np.ones_like(dataset['U']) * 2
-        dataset['u_true'] = dataset_norm['Electricity:HVAC'].to_numpy()[:, np.newaxis]
 
         # Bounds on indoor temperature
         tempMin = torch.tensor(norm.norm(manager.tempBounds[0], keys=['y'])).to(device=device)
@@ -280,7 +279,7 @@ def Main():
             
             manager.models["buildingThermal"]["init_params"] = {'nx': buildingThermal.nx, 'nu': buildingThermal.nu, 'nd': buildingThermal.nd}
         # ------------------------------------------
-        
+        break
         # ------------ Train controller ------------
         controlSystem = ControllerSystem(nx=dataset['X'].shape[1],
                                         nu=dataset['U'].shape[1],

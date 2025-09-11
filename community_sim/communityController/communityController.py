@@ -73,7 +73,7 @@ class CommunityController:
         self.coordinator.predictedFlexibility = self.predictedFlex
         self.coordinator.baseLoad = np.ones((2, self.coordinator.nsteps)) * 10
         self.coordinator.Step()
-        coordinateSignals = self.coordinator.reductionFactor
+        coordinateSignals = self.coordinator.adjustValues['flexLoad']
 
         # Update controllers
         controlEvents = []

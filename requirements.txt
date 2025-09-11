@@ -1,3 +1,7 @@
 python-dotenv
 neuromancer @ git+https://github.com/saltshaker/neuromancer
 tensorflow
+matplotlib
+pandas
+numpy
+multiprocessing-logging

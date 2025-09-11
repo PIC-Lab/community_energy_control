@@ -405,6 +405,15 @@ class BuildingNode(NeuromancerModel):
         # Plot training and validation loss
         self.PlotLoss()
 
+    def DeployModel(self):
+        '''
+        Method that handles creation and loading of a model for deployment
+        '''
+        self.CreateModel()
+        self.TrainModel(dataset=None, load=True, test=False)
+
+        return self.problem
+
 class ExperimentalThermalModel(NeuromancerModel):
     def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel,
                  saveDir:typing.Optional[str]=None, nsteps_test:typing.Optional[int]=None):
@@ -459,13 +468,12 @@ class ExperimentalThermalModel(NeuromancerModel):
 
         trainData = DictDataset(
             {'x': torch.tensor(train['X'].reshape(nbatch*7, self.nsteps, self.nx), **params),
-             'xn': torch.tensor(train['X'].reshape(nbatch*7, self.nsteps, self.nx), **params)[:,0:1,:],
+             'yn': torch.tensor(train['X'].reshape(nbatch*7, self.nsteps, self.nx), **params)[:,0:1,:],
+             'u0': torch.tensor(train['U'].reshape(nbatch*7, self.nsteps, self.nu), **params)[:,0:1,:],
+             'd0': torch.tensor(train['D'].reshape(nbatch*7, self.nsteps, self.nd), **params)[:,0:1,:],
              'u': torch.tensor(train['U'].reshape(nbatch*7, self.nsteps, self.nu), **params),
-             'd': torch.tensor(train['D'].reshape(nbatch*7, self.nsteps, self.nd), **params),
-             'mode': torch.tensor(train['mode'].reshape(nbatch*7, self.nsteps, 1), **params),
-             'u_true':torch.tensor(train['u_true'].reshape(nbatch*7, self.nsteps, 1), **params),
-             'u_prev': torch.tensor(np.round(train['u_true']).reshape(nbatch*7, self.nsteps, 1), **params)[:,0:1,:],
-             'u_bin': torch.tensor(np.round(train['u_true']).reshape(nbatch*7, self.nsteps, 1), **params)[:,0:1,:]},
+             'd': torch.tensor(train['D'].reshape(nbatch*7, self.nsteps, self.nd), **params)
+            },
             name='train')
         # for key, value in trainData.datadict.items():
         #     print(key, value.shape)
@@ -474,13 +482,12 @@ class ExperimentalThermalModel(NeuromancerModel):
         
         devData = DictDataset(
             {'x': torch.tensor(dev['X'].reshape(nbatch*2, self.nsteps, self.nx), **params),
-             'xn': torch.tensor(dev['X'].reshape(nbatch*2, self.nsteps, self.nx), **params)[:,0:1,:],
+             'yn': torch.tensor(dev['X'].reshape(nbatch*2, self.nsteps, self.nx), **params)[:,0:1,:],
+             'u0': torch.tensor(dev['U'].reshape(nbatch*2, self.nsteps, self.nu), **params)[:,0:1,:],
+             'd0': torch.tensor(dev['D'].reshape(nbatch*2, self.nsteps, self.nd), **params)[:,0:1,:],
              'u': torch.tensor(dev['U'].reshape(nbatch*2, self.nsteps, self.nu), **params),
              'd': torch.tensor(dev['D'].reshape(nbatch*2, self.nsteps, self.nd), **params),
-             'mode': torch.tensor(dev['mode'].reshape(nbatch*2, self.nsteps, 1), **params),
-             'u_true':torch.tensor(dev['u_true'].reshape(nbatch*2, self.nsteps, 1), **params),
-             'u_prev':torch.tensor(np.round(dev['u_true']).reshape(nbatch*2, self.nsteps, 1), **params)[:,0:1,:],
-             'u_bin': torch.tensor(np.round(dev['u_true']).reshape(nbatch*2, self.nsteps, 1), **params)[:,0:1,:]},
+            },
             name='dev'
         )
         # for key, value in devData.datadict.items():
@@ -492,13 +499,11 @@ class ExperimentalThermalModel(NeuromancerModel):
 
         testData = {
             'x': torch.tensor(test['X'].reshape(nbatch, self.nsteps_test, self.nx), **params),
-            'xn': torch.tensor(test['X'].reshape(nbatch, self.nsteps_test, self.nx), **params)[:,0:1,:],
+            'yn': torch.tensor(test['X'].reshape(nbatch, self.nsteps_test, self.nx), **params)[:,0:1,:],
+            'u0': torch.tensor(test['U'].reshape(nbatch, self.nsteps_test, self.nu), **params)[:,0:1,:],
+            'd0': torch.tensor(test['D'].reshape(nbatch, self.nsteps_test, self.nd), **params)[:,0:1,:],
             'u': torch.tensor(test['U'].reshape(nbatch, self.nsteps_test, self.nu), **params),
-            'd': torch.tensor(test['D'].reshape(nbatch, self.nsteps_test, self.nd), **params),
-            'mode': torch.tensor(test['mode'].reshape(nbatch, self.nsteps_test, 1), **params),
-            'u_true': torch.tensor(test['u_true'].reshape(nbatch, self.nsteps_test, 1), **params),
-            'u_prev': torch.tensor(np.round(test['u_true']).reshape(nbatch, self.nsteps_test, 1), **params)[:,0:1,:],
-            'u_bin': torch.tensor(np.round(test['u_true']).reshape(nbatch, self.nsteps_test, 1), **params)[:,0:1,:]
+            'd': torch.tensor(test['D'].reshape(nbatch, self.nsteps_test, self.nd), **params)
         }
         # for key, value in testData.items():
         #     print(key, value.shape)
@@ -508,28 +513,42 @@ class ExperimentalThermalModel(NeuromancerModel):
     def CreateModel(self):
         '''Defines building thermal system'''
 
-        # fx = blocks.MLP(self.nx+self.nu+self.nd, self.nx, bias=True, linear_map=torch.nn.Linear,
-        #                 nonlin=torch.nn.Sigmoid, hsizes=self.hsizes)
+        n_latent = 6
+
+        encoder = blocks.MLP(self.nx+self.nu+self.nd, n_latent, bias=True, 
+                             linear_map=torch.nn.Linear,
+                             nonlin=torch.nn.ReLU,
+                             hsizes=[80])
+        encode_sym = Node(encoder, ['yn', 'u0', 'd0'], ['xn'], name='encoder')
+
+        fx = blocks.MLP(n_latent+self.nu+self.nd, n_latent, bias=True, linear_map=torch.nn.Linear,
+                        nonlin=torch.nn.Tanh, hsizes=self.hsizes)
     
-        # fxRK4 = integrators.RK4(fx)
+        fxRK4 = integrators.RK4(fx)
 
-        # model = Node(fxRK4, ['xn', 'u_bin', 'd'], ['xn'], name="buildingNODE")
+        model = Node(fxRK4, ['xn', 'u', 'd'], ['xn'], name="buildingNODE")
 
-        model = Node(ThermalModel(self.nx, self.nu, self.nd, self.hsizes),
-                     ['xn', 'u', 'd', 'mode', 'u_prev', 'u_bin'], ['xn', 'u_bin', 'u_prev'], name='buildingNODE_exp')
+        # model = Node(ThermalModel(self.nx, self.nu, self.nd, self.hsizes),
+        #              ['xn', 'u', 'd', 'mode', 'u_prev', 'u_bin'], ['xn', 'u_bin', 'u_prev'], name='buildingNODE_exp')
 
-        C = torch.tensor([[1.0]], device=self.device)
-        ynext = lambda x: x @ C.T
-        output_model = Node(ynext, ['xn'], ['y'], name='out_obs')
+        # C = torch.tensor([[1.0]], device=self.device)
+        # ynext = lambda x: x @ C.T
+        # output_model = Node(ynext, ['xn'], ['y'], name='out_obs')
 
-        dynamics_model = System([model, output_model], name='system', nsteps=self.nsteps)
+        decoder = blocks.MLP(n_latent, self.nx, bias=True,
+                             linear_map=torch.nn.Linear,
+                             nonlin=torch.nn.ReLU,
+                             hsizes=[80])
+        decode_sym = Node(decoder, ['xn'], ['y'], name='decoder')
+
+        dynamics_model = System([model, decode_sym], name='system', nsteps=self.nsteps)
         self.model = dynamics_model
         dynamics_model.to(device=self.device)
         if self.callback.debugLevel > DebugLevel.NO:
             dynamics_model.show(self.manager.runPath+'thermalModelDiagram.png')
 
         x = variable("x")
-        xhat = variable('xn')[:, :-1, :]
+        xhat = variable('y')
 
         referenceLoss = 5.*(xhat == x)^2
         referenceLoss.name = 'ref_loss'
@@ -541,17 +560,17 @@ class ExperimentalThermalModel(NeuromancerModel):
         constraints = []
 
         loss = PenaltyLoss(objectives, constraints)
-
-        self.problem = Problem([dynamics_model], loss)
+        
+        self.problem = Problem([encode_sym, dynamics_model], loss)
         if self.callback.debugLevel > DebugLevel.NO:
             self.problem.show(self.manager.runPath+'NODE_optim.png')
 
     def TestModel(self):
         '''Plots the testing of the building thermal model'''
-        self.model.nsteps = self.nsteps_test
-        testOutputs = self.model(self.testData)
+        self.testData['name'] = 'test'
+        testOutputs = self.problem(self.testData)
 
-        pred_traj = testOutputs['xn'][:,:-1,:].detach().cpu().numpy().reshape(-1,self.nx)
+        pred_traj = testOutputs['test_y'].detach().cpu().numpy().reshape(-1,self.nx)
         true_traj = self.testData['x'].detach().cpu().numpy().reshape(-1,self.nx)
         input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
         dist_traj = self.testData['d'].detach().cpu().numpy().reshape(-1,self.nd)
@@ -584,9 +603,6 @@ class ExperimentalThermalModel(NeuromancerModel):
         ax[-2].tick_params(labelbottom=True, labelsize=figsize)
         ax[-2].set_xlim([0,500])
         # ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
-        ax[-1].plot(self.testData['u_true'].detach().cpu().numpy().reshape(-1, 1), label='u_true')
-        ax[-1].plot(testOutputs['u_bin'].detach().cpu().numpy().reshape(-1, 1), label='u_bin')
-        ax[-1].plot(testOutputs['u_prev'].detach().cpu().numpy().reshape(-1,1), label='mode_lock')
         ax[-1].legend(fontsize=figsize)
         ax[-1].set_xlabel('$time$', fontsize=figsize)
         ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
@@ -598,21 +614,21 @@ class ExperimentalThermalModel(NeuromancerModel):
         fig.savefig(self.saveDir+'/building_rollout', dpi=fig.dpi)
         plt.close(fig)
 
-        lw = 2.0
-        fs = 12
-        fig,ax = plt.subplots(self.nx, figsize=(7, 5))
-        labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-            ax.plot(t1, 'c', linewidth=lw, label="True")
-            ax.plot(t2, 'm--', linewidth=lw, label='Pred')
-            ax.tick_params(labelbottom=False, labelsize=fs)
-            ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=fs)
-            ax.tick_params(labelbottom=True, labelsize=fs)
-        # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
-            ax.legend(fontsize=fs)
-        plt.tight_layout()
-        fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
-        plt.close(fig)
+        # lw = 2.0
+        # fs = 12
+        # fig,ax = plt.subplots(self.nx, figsize=(7, 5))
+        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
+        # for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
+        #     ax.plot(t1, 'c', linewidth=lw, label="True")
+        #     ax.plot(t2, 'm--', linewidth=lw, label='Pred')
+        #     ax.tick_params(labelbottom=False, labelsize=fs)
+        #     ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=fs)
+        #     ax.tick_params(labelbottom=True, labelsize=fs)
+        # # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
+        #     ax.legend(fontsize=fs)
+        # plt.tight_layout()
+        # fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
+        # plt.close(fig)
 
         # Plot training and validation loss
         self.PlotLoss()
@@ -1421,6 +1437,14 @@ class BatteryModel(nn.Module):
 
         return x
     
+    @staticmethod
+    def DeployModel(batModel, nsteps):
+        '''
+        '''
+        nodes = [Node(batModel, ['stored', 'u_bat'], ['stored'], name='batModel')]
+        return System(nodes, nsteps=nsteps, drop_init_cond=True)
+
+    
 class batCorrect(nn.Module):
     def __init__(self, capacity):
         super().__init__()
@@ -1445,39 +1469,6 @@ class batCorrect(nn.Module):
         #     deltaX[1:] = (x[1:] - x[:-1]) * 60 * 1/0.95
         #     self.xPrev = x[-1].item()
         # return torch.clamp(deltaX, min=-9.6, max=9.6)
-
-class iMODE(blocks.Block):
-    def __init__(self, insize, outsize, bias=True, linear_map=slim.Linear, nonlin=nn.Softplus, hsizes=[64], linargs=dict()):
-        '''
-        Constructor
-        Define model topology
-        '''
-        super().__init__()
-        self.in_features, self.out_features = insize, outsize
-        self.nhidden = len(hsizes)
-        sizes = [insize] + hsizes + [outsize]
-        self.nonlin = nn.ModuleList(
-            [nonlin() for k in range(self.nhidden)] + [nn.Identity()]
-        )
-        self.linear = nn.ModuleList(
-            [linear_map(sizes[k], sizes[k+1], baias=bias, **linargs) for k in range(self.nhidden + 1)]
-        )
-
-    def block_eval(self, x):
-        '''
-        Apply inputs through model layers
-        '''
-        first = True
-        for lin, nlin in zip(self.linear, self.nonlin):
-            if first:
-                x = nlin(lin(x))
-                first = False
-                continue
-            xin = x
-            x = nlin(lin(x))
-            x = torch.cat([xin,x],1)
-        return x
-    
 
 # Custom debug and callback code
 class Callback_Basic(Callback):
