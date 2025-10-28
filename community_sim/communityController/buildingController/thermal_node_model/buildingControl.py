@@ -6,60 +6,75 @@ import json
 import resource
 
 import runManager
-from modelConstructor_projGrad import *
+from modelConstructor import *
 
 def Main():
     # Setting memory limits
-    resource.setrlimit(resource.RLIMIT_AS, (int(200 * 1e9), int(250 * 1e9)))
+    # resource.setrlimit(resource.RLIMIT_AS, (int(200 * 1e9), int(250 * 1e9)))
 
-    # torch.manual_seed(0)
-    # If cuda is available, run on GPU
-    if torch.cuda.is_available():
-        dev = 'cuda:0'
-        print("CUDA is available, running on GPU")
-    else:
-        dev = "cpu"
-        print("CUDA is not available, running on CPU")
-    device = torch.device(dev)
-    # device = torch.device("cpu")
-
-    # Check if to load a previous run
-    print("---Run Manager---")
+    print("--- Run Manager ---")
     userInput = input('Would you like to load a previous run? (y/n) ')
     if userInput.lower() == 'y':
         loadRun = True
+        saveToLatest = True
+        device = torch.device('cpu')
         # Should put some error checking here at some point
         name = input('What run would you like to load? (case sensitive) ')
         if name == '':
             name = 'latestRun'
             print(f"No name given, defaulting to {name}")
     else:
+        print("--- CUDA Setup ---")
+        if torch.cuda.is_available():
+            print(f"CUDA is available. There are {torch.cuda.device_count()} GPUs available. Which would you like to run on?")
+            looping = True
+            while looping:
+                devNum = input("Enter a number, will default to 0 if left blank. You may also enter 'cpu' if desired. ")
+                if devNum == '':
+                    dev = 'cuda:0'
+                    looping = False
+                elif devNum.lower() == 'cpu':
+                    dev = 'cpu'
+                    looping = False
+                else:
+                    try:
+                        assert int(devNum) < torch.cuda.device_count()
+                        dev = f'cuda:{devNum}'
+                        looping = False
+                    except (ValueError, AssertionError):
+                        print(f'{devNum} is not a valid cuda device.')
+        else:
+            dev = "cpu"
+            print("CUDA is not available, running on CPU")
+        device = torch.device(dev)
         loadRun = False
-        # name = "alf_AllBuildings"
-        name = 'projGrad_fine_6'
+        userInput = input('Are you doing training runs in parallel? (y/n) ')
+        if userInput.lower() == 'y':
+            saveToLatest = False
+            name = input('What name should this train be saved under? ')
+            if name == '':
+                name = "alf_AllBuildings"
+                print(f"No name given, defaulting to {name}")
+        else:
+            name = "alf_AllBuildings"
+            saveToLatest = True
 
-    manager = runManager.RunManager(name, saveToLatest=True)
+    manager = runManager.RunManager(name, saveToLatest=saveToLatest)
 
     # Load a previous run based on a name
     if loadRun:
         manager.LoadRunJson(name)
         loadThermal = True
-        loadClass = True
         loadMPC = True
 
         for key in manager.models.keys():
             if key.find('buildingThermal') != -1:
                 thermalModelName = key
-                expModelName = key
-            elif key.find('classifier') != -1:
-                classifierModelName = key
-            elif key.find('setpoint') != -1:
-                setpointName = key
             elif key.find('controller') != -1:
                 controllerModelName = key
             else:
-                raise ValueError(f"Model name '{key}' does not meet expected naming conventions.")
-            
+                print(f"Model name '{key}' does not meet expected naming conventions. Key will be ignored.")
+
     # Populate run manager for saving later
     else:
         # Check if specific models should be loaded
@@ -71,79 +86,38 @@ def Main():
         else:
             loadThermal = False
 
-        userInput = input('Do you want to load the classifier model? (y/n) ')
-        if userInput.lower() == 'y':
-            loadClass = True
-        else:
-            loadClass = False
-
         userInput = input('Do you want to load the controller model? (y/n) ')
         if userInput.lower() == 'y':
             loadMPC = True
         else:
             loadMPC = False
+            userInput = input("Should this run include SDA gradient projection? (y/n) ")
+            if userInput.lower() == 'y':
+                gradProj = True
+            else:
+                gradProj = False
 
         # ----- Set model parameters -----
         # Building thermal model
         thermalModelName = "buildingThermal"
         manager.models[thermalModelName] = {
-            'hsizes': [200,200],
+            'hsizes': [100],
             'train_params': {
-                'max_epochs': 1000,
-                'patience': 50,
-                'warmup': 100,
-                'lr': 0.001,
+                'max_epochs': 500,
+                'patience': 20,
+                'warmup': 50,
+                'lr': 0.003,
                 'nsteps': 60,
                 'batch_size': 30
-            }
-        }
-
-        # expModelName = "experimental buildingThermal"
-        # manager.models[expModelName] = {
-        #     'hsizes': [200,200],
-        #     'train_params': {
-        #         'max_epochs': 1000,
-        #         'patience': 50,
-        #         'warmup': 100,
-        #         'lr': 0.0005,
-        #         'nsteps': 60,
-        #         'batch_size': 50
-        #     }
-        # }
-
-        # Classifier model
-        classifierModelName = "classifier"
-        manager.models[classifierModelName] = {
-            'hsizes': [64],
-            'train_params': {
-                'max_epochs': 500,
-                'patience': 50,
-                'warmup': 100,
-                'lr': 0.001,
-                'nsteps': 30,
-                'batch_size': 10
-            }
-        }
-
-        setpointName = "setpoint"
-        manager.models[classifierModelName] = {
-            'hsizes': [64],
-            'train_params': {
-                'max_epochs': 500,
-                'patience': 50,
-                'warmup': 100,
-                'lr': 0.001,
-                'nsteps': 30,
-                'batch_size': 10
             }
         }
         
         # Controller model
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
-            'weights': {'dr_loss': 6.0, 'cost_loss': 5.0, 'delta_loss': 1.0,
-                        'hvac_loss': 0.5, 'bat_loss': 2.0, 'bat_max_loss': 0.7,
-                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 15.0},
+            'weights': {'cost_loss': 2.0, 'delta_loss': 2.0,
+                        'follow_limit': 25.0, 'coordRef': 15.0,
+                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 25.0, 'bat_max': 10.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
             'hsizes': [200,200],
@@ -155,15 +129,11 @@ def Main():
                 'nsteps': 60,
                 'batch_size': 20,
                 'n_samples': 200,
-                'projHVAC_steps': 10,
-                'projHVAC_size': 35,
-                'projBat_steps': 15,
-                'projBat_size': 10
             }
         }
         # -----------------------------
 
-        if loadThermal or loadClass or loadMPC:
+        if loadThermal or loadMPC:
             modelRunName = input('What run should the model(s) be loaded from? ')
             if modelRunName == '':
                 # ----- Default run name -----
@@ -178,12 +148,6 @@ def Main():
                         thermalModelName = key
                 shutil.copytree(f'{manager.saveDir}/{modelRunName}/{thermalModelName}', manager.runPath+thermalModelName)
                 manager.LoadModel(modelRunName, thermalModelName)
-            if loadClass:
-                for key in manager_modelLoad.models.keys():
-                    if key.find('classifier') != -1:
-                        classifierModelName = key
-                shutil.copytree(f'{manager.saveDir}/{modelRunName}/{classifierModelName}', manager.runPath+classifierModelName)
-                manager.LoadModel(modelRunName, classifierModelName)
             if loadMPC:
                 for key in manager_modelLoad.models.keys():
                     if key.find('controller') != -1:
@@ -211,57 +175,11 @@ def Main():
         if (file / 'workflow.osw').exists() and (file.name in simParams['controlledAliases']):
             buildings.append(file.name)
 
-    buildings = ['4']
-
-    # ------------ Train classifier ------------
-    tempList = []
-    while len(tempList) < manager.dataset['slice_idx'][1]:
-        value = np.random.uniform(0, 1)
-        duration = np.random.randint(1,30)
-        tempList.extend([value] * duration)
-
-    tempList = tempList[:manager.dataset['slice_idx'][1]]
-
-    classifierData = {}
-    classifierData['U'] = np.array(tempList)[:,np.newaxis]
-    classifierData['M'] = classifierData['U'] > 0.5
-    
-    classifier = ModeClassifier(nm=classifierData['M'].shape[1],
-                                    nu=classifierData['U'].shape[1],
-                                    manager=manager,
-                                    name=classifierModelName,
-                                    device=device,
-                                    debugLevel = DebugLevel.EPOCH_LOSS,
-                                    saveDir=f"{manager.runPath+classifierModelName}")
-    classifier.CreateModel()
-
-    classifier.TrainModel(classifierData, loadClass)
-
-    classifier.TestModel()
-
-    # setpointData = {}
-
-    # setpoint = SetpointPredictor(nu=setpointData['M'].shape[1],
-    #                                 nu=setpointData['U'].shape[1],
-    #                                 manager=manager,
-    #                                 name=setpointName,
-    #                                 device=device,
-    #                                 debugLevel = DebugLevel.EPOCH_LOSS,
-    #                                 saveDir=f"{manager.runPath+setpointName}")
-    # setpoint.CreateModel()
-
-    # setpoint.TrainModel(setpointData, loadClass)
-
-    # setpoint.TestModel()
-
-    manager.models["classifier"]["init_params"] = {'nm': classifier.nm, 'nu': classifier.nu}
-    # ------------------------------------------
-
     tol = 1e-6              # Tolerance when determining if training loss improved at all
     bestLoss = 1e5          # Best achieved loss over multiple training attempts
     maxIterations = 1       # Maximum attempts allowed for finding the best training loss
 
-    count = 0   
+    count = 1 
     attempts = 0
     i = 0
     while(i < len(buildings)):
@@ -272,9 +190,9 @@ def Main():
         alfData['Price'] = dates.apply(lambda x: TOUPricing(x, timeSteps=1440))
 
         if manager.dataset['sliceBool']:
-            raw_dataset = alfData.iloc[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1]].loc[:,['living space Air Temperature', 'cooling setpoint', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
+            raw_dataset = alfData.iloc[manager.dataset['slice_idx'][0]:manager.dataset['slice_idx'][1]].loc[:,['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
         else:
-            raw_dataset = alfData.loc[:, ['living space Air Temperature', 'cooling setpoint', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
+            raw_dataset = alfData.loc[:, ['living space Air Temperature', 'Electricity:HVAC', 'Site Outdoor Air Temperature', 'Price']].copy()
 
         # upData = pd.DataFrame(index=dates, columns=raw_dataset.columns, data=raw_dataset.to_numpy())
         
@@ -286,10 +204,10 @@ def Main():
 
         norm = Normalizer()
         norm.add_data(raw_dataset)
-        norm.add_data(raw_dataset, keys=['y', 'u', 'x', 'd', 'p'])
+        norm.add_data(raw_dataset, keys=['y', 'u', 'd', 'p'])
         norm.dataInfo['p']['min'] = 0
         norm.save(f"{manager.runPath}norm/{building}/")
-        dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'x', 'd', 'p'])
+        dataset_norm = norm.norm(raw_dataset, keys=['y', 'u', 'd', 'p'])
 
         print(dataset_norm.describe())
 
@@ -310,11 +228,12 @@ def Main():
         tempMax = torch.tensor(norm.norm(manager.tempBounds[1], keys=['y'])).to(device=device)
 
         # ---------- Train thermal model -----------
-        if (attempts == 0) and (count == 0):
+        if (attempts == 0) and (count == 1):
             buildingThermal = BuildingNode(nx=dataset['X'].shape[1],
                                     nu=dataset['U'].shape[1],
                                     nd=dataset['D'].shape[1],
                                     manager=manager,
+                                    norm=norm,
                                     name=thermalModelName,
                                     device=device,
                                     debugLevel = DebugLevel.EPOCH_VALUES,
@@ -348,8 +267,7 @@ def Main():
                                         manager=manager,
                                         name=controllerModelName,
                                         norm=norm,
-                                        thermalModel=buildingThermal.model,
-                                        classifier=classifier.model,
+                                        thermalModel=buildingThermal.problem,
                                         device=device,
                                         debugLevel=DebugLevel.EPOCH_VALUES,
                                         saveDir=f"{manager.runPath+controllerModelName}/{building}")
@@ -365,7 +283,7 @@ def Main():
         # ------------------------------------------
 
         # Skip repeat training if loading a previously saved run
-        if loadRun or (loadThermal and loadClass and loadMPC):
+        if loadRun or (loadThermal and loadMPC):
             i += 1
             continue
         # Repeat training if it got stuck somewhere

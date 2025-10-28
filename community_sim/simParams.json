@@ -4,8 +4,8 @@
     "duration": "1D",
     "warmup": "5m",
     "testCase": "base",
-    "controlledAliases": ["4"],
+    "controlledAliases": ["2", "3", "4", "5", "9", "10", "12", "15", "17", "22", "24", "25", "26", "27", "28"],
     "logLevel": "DEBUG",
-    "resultsDir": "results/",
-    "controllerRun": "projGrad_fine_5"
+    "resultsDir": "results/coord_flex_v2/",
+    "controllerRun": "return_6"
 }

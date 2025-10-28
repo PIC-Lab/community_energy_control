@@ -11,13 +11,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 
-import sys
-sys.path.insert(1, '../buildingController')
-from buildingController.thermal_node_model.modelConstructor import BuildingNode, BatteryModel        # type:ignore
-from buildingController.thermal_node_model.runManager import RunManager
+# import sys
+# sys.path.insert(1, '../buildingController')
+# from buildingController.thermal_node_model.modelConstructor import BuildingNode, BatteryModel        # type:ignore
+# from buildingController.thermal_node_model.runManager import RunManager
 
-# from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, BatteryModel
-# from communityController.buildingController.thermal_node_model.runManager import RunManager
+from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, BatteryModel
+from communityController.buildingController.thermal_node_model.runManager import RunManager
 
 class FlexibilityMetricPredictor:
     '''

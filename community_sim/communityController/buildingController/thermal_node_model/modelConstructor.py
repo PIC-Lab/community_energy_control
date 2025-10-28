@@ -166,7 +166,7 @@ class NeuromancerModel(ABC):
         plt.close(fig)
 
 class BuildingNode(NeuromancerModel):
-    def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
+    def __init__(self, nx:int, nu:int, nd:int, manager, norm, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
         '''
         Constructor function
 
@@ -186,6 +186,8 @@ class BuildingNode(NeuromancerModel):
         self.nd = nd
 
         self.hsizes = self.manager.models[name]['hsizes']
+
+        self.norm = norm
 
         self.callback = Callback_NODE(debugLevel, self.saveDir)
 
@@ -224,8 +226,8 @@ class BuildingNode(NeuromancerModel):
         trainU = torch.tensor(trainU, dtype=torch.float32, device=self.device)
         trainD = train['D'].reshape(nbatch*7, self.nsteps, self.nd)
         trainD = torch.tensor(trainD, dtype=torch.float32, device=self.device)
-        trainData = DictDataset({'x': trainX, 'xn': trainX[:,0:1,:],
-                                'u': trainU, 'd': trainD}, name='train')
+        trainData = DictDataset({'x': trainX, 'yn': trainX[:,0:1,:],
+                                'u_hvac': trainU, 'd': trainD}, name='train')
         # for key, value in trainData.datadict.items():
         #     print(key, value.shape)
         trainLoader = DataLoader(trainData, batch_size=self.batch_size,
@@ -237,8 +239,8 @@ class BuildingNode(NeuromancerModel):
         devU = torch.tensor(devU, dtype=torch.float32, device=self.device)
         devD = dev['D'].reshape(nbatch*2, self.nsteps, self.nd)
         devD = torch.tensor(devD, dtype=torch.float32, device=self.device)
-        devData = DictDataset({'x': devX, 'xn': devX[:,0:1,:],
-                                'u': devU, 'd': devD}, name='dev')
+        devData = DictDataset({'x': devX, 'yn': devX[:,0:1,:],
+                                'u_hvac': devU, 'd': devD}, name='dev')
         # for key, value in devData.datadict.items():
         #     print(key, value.shape)
         devLoader = DataLoader(devData, batch_size=self.batch_size,
@@ -252,7 +254,7 @@ class BuildingNode(NeuromancerModel):
         testU = torch.tensor(testU, dtype=torch.float32, device=self.device)
         testD = test['D'].reshape(nbatch, self.nsteps, self.nd)
         testD = torch.tensor(testD, dtype=torch.float32, device=self.device)
-        testData = {'x': testX, 'xn': testX[:,0:1,:], 'u': testU, 'd':testD}
+        testData = {'x': testX, 'yn': testX[:,0:1,:], 'u_hvac': testU, 'd':testD}
         # for key, value in testData.items():
         #     print(key, value.shape)
 
@@ -260,25 +262,37 @@ class BuildingNode(NeuromancerModel):
 
     def CreateModel(self):
         '''Defines building thermal system'''
-        fx = blocks.MLP(self.nx+self.nu+self.nd, self.nx, bias=True, linear_map=torch.nn.Linear,
-                        nonlin=torch.nn.Sigmoid, hsizes=self.hsizes)
+        n_latent = 4
+
+        encoder = blocks.MLP(self.nx, n_latent, bias=True,
+                             linear_map=torch.nn.Linear,
+                             nonlin=torch.nn.ReLU,
+                             hsizes=[40])
+        
+        encode_sym = Node(encoder, ['yn'], ['xn'], name='encoder')
+
+        fx = blocks.MLP(n_latent+self.nu+self.nd, n_latent, bias=True, linear_map=torch.nn.Linear,
+                        nonlin=torch.nn.Tanh, hsizes=self.hsizes)
     
-        fxRK4 = integrators.RK4(fx)
+        fxRK4 = integrators.RK4(fx, h=1)
 
-        model = Node(fxRK4, ['xn', 'u', 'd'], ['xn'], name="buildingNODE")
+        self.model = Node(fxRK4, ['xn', 'u_hvac', 'd'], ['xn'], name="buildingNODE")
 
-        C = torch.tensor([[1.0]], device=self.device)
-        ynext = lambda x: x @ C.T
-        output_model = Node(ynext, ['xn'], ['y'], name='out_obs')
+        decoder = blocks.MLP(n_latent, self.nx, bias=True,
+                             linear_map=torch.nn.Linear,
+                             nonlin=torch.nn.ReLU,
+                             hsizes=[40])
+        decode_sym = Node(decoder, ['xn'], ['y'], name='decoder')
+        decode_sym.to(device=self.device)
 
-        dynamics_model = System([model, output_model], name='system', nsteps=self.nsteps)
+        dynamics_model = System([self.model, decode_sym], name='system', nsteps=self.nsteps)
         self.model = dynamics_model
         dynamics_model.to(device=self.device)
         if self.callback.debugLevel > DebugLevel.NO:
             dynamics_model.show(self.manager.runPath+'thermalModelDiagram.png')
 
         x = variable("x")
-        xhat = variable('xn')[:, :-1, :]
+        xhat = variable('y')
 
         referenceLoss = 5.*(xhat == x)^2
         referenceLoss.name = 'ref_loss'
@@ -291,20 +305,22 @@ class BuildingNode(NeuromancerModel):
 
         loss = PenaltyLoss(objectives, constraints)
 
-        self.problem = Problem([dynamics_model], loss)
+        self.problem = Problem([encode_sym, dynamics_model], loss)
+        self.problem.to(device=self.device)
         if self.callback.debugLevel > DebugLevel.NO:
             self.problem.show(self.manager.runPath+'NODE_optim.png')
 
     def TestModel(self):
         '''Plots the testing of the building thermal model'''
-        dynamics_model = self.problem.nodes[0]
-        dynamics_model.nsteps = self.testData['x'].shape[1]
+        # Plot training and validation loss
+        self.PlotLoss()
 
-        testOutputs = dynamics_model(self.testData)
+        self.testData['name'] = 'test'
+        testOutputs = self.problem(self.testData)
 
-        pred_traj = testOutputs['xn'][:,:-1,:].detach().cpu().numpy().reshape(-1,self.nx)
+        pred_traj = testOutputs['test_y'].detach().cpu().numpy().reshape(-1,self.nx)
         true_traj = self.testData['x'].detach().cpu().numpy().reshape(-1,self.nx)
-        input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
+        input_traj = self.testData['u_hvac'].detach().cpu().numpy().reshape(-1,self.nu)
         dist_traj = self.testData['d'].detach().cpu().numpy().reshape(-1,self.nd)
         pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
 
@@ -361,49 +377,87 @@ class BuildingNode(NeuromancerModel):
         fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
         plt.close(fig)
 
-        # No updated conditions
-        # dynamics_model.nsteps = 60
-        # testOutputs = dynamics_model(self.testData[0:1,:,:])
+        # Plotting model rollout over longer period with no updated initial conditions
+        test_nsteps = 1440
+        prev_nsteps = self.testData['d'].shape[1]
+        rolloutData = {}
+        for key, value in self.testData.items():
+            if key == 'name':
+                continue
+            elif key == 'yn':
+                rolloutData[key] = value[::int(test_nsteps/prev_nsteps),:,:]
+            else:
+                rolloutData[key] = value.reshape([-1, test_nsteps, value.shape[2]])
 
-        # pred_traj = testOutputs['xn'][:,:-1,:].detach().cpu().numpy().reshape(-1,self.nx)
-        # true_traj = self.testData['x'].detach().cpu().numpy().reshape(-1,self.nx)
-        # input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
-        # dist_traj = self.testData['d'].detach().cpu().numpy().reshape(-1,self.nd)
-        # pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
-        
-        # figsize = 25
-        # lw = 4.0
-        # fig,ax = plt.subplots(self.nx+self.nu+self.nd, figsize=(figsize, figsize))
-        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        # for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-        #     axe = ax[row]
-        #     axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
-        #     axe.plot(t1, 'c', linewidth=lw, label="True")
-        #     axe.plot(t2, 'm--', linewidth=lw, label='Pred')
-        #     axe.tick_params(labelbottom=False, labelsize=figsize)
-        #     axe.set_title("Indoor Air Temperature (Normalized)", fontsize=figsize)
-        #     axe.set_xlim([0,60])
-        # axe.tick_params(labelbottom=True, labelsize=figsize)
-        # axe.legend(fontsize=figsize)
-        # ax[-2].plot(dist_traj, 'c', linewidth=lw, label='Outdoor Air Temp')
-        # ax[-2].legend(fontsize=figsize)
-        # ax[-2].set_title("Outdoor Air Temperature (Normalized)", fontsize=figsize)
-        # ax[-2].tick_params(labelbottom=True, labelsize=figsize)
-        # ax[-2].set_xlim([0,60])
-        # ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
-        # ax[-1].legend(fontsize=figsize)
-        # ax[-1].set_xlabel('$time$', fontsize=figsize)
-        # ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
-        # ax[-1].tick_params(labelbottom=True, labelsize=figsize)
-        # ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
-        # ax[-1].set_xlim([0,60])
-        # plt.figtext(0.01, 0.01, self.runName, fontsize=figsize)
-        # plt.tight_layout()
-        # fig.savefig(self.saveDir+'/building_rollout_short', dpi=fig.dpi)
-        # plt.close(fig)
+        # dynamics_model.nsteps = test_nsteps
 
-        # Plot training and validation loss
-        self.PlotLoss()
+        # rolloutTraj = dynamics_model(rolloutData)
+        rolloutData['name'] = 'rollout'
+        self.problem.nodes[1].nsteps = test_nsteps
+        rolloutTraj = self.problem(rolloutData)
+
+        pred_traj = rolloutTraj['rollout_y'][:,:-1,:].detach().cpu().numpy().reshape(-1,self.nx)
+        pred_traj = pred_traj.transpose(1,0)
+
+        lw = 2.0
+        fs = 12
+        fig,ax = plt.subplots(self.nx, figsize=(7, 4))
+        for row, (t1, t2) in enumerate(zip(self.norm.denorm(true_traj, 'y'), self.norm.denorm(pred_traj, 'y'))):
+            ax.set_ylabel(label, fontsize=fs)
+            ax.plot(t1, 'c', linewidth=lw, label="True")
+            ax.plot(t2, 'm--', linewidth=lw, label='Pred')
+            ax.set_xlim([0,2000])
+        ax.tick_params(labelbottom=True, labelsize=fs)
+        ax.set_ylabel('Indoor Air Temperature [C]')
+        ax.set_xlabel('Time [mins]', fontsize=fs)
+        ax.legend(fontsize=fs)
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/extended_rollout_simple', dpi=fig.dpi)
+        plt.close(fig)
+
+        lw = 2.0
+        fs = 12
+        fig,ax = plt.subplots(self.nx, figsize=(7, 4))
+        for row, (t1, t2) in enumerate(zip(self.norm.denorm(true_traj, 'y'), self.norm.denorm(pred_traj, 'y'))):
+            ax.set_ylabel(label, fontsize=fs)
+            ax.plot(t1, 'c', linewidth=lw, label="True")
+            ax.plot(t2, 'm--', linewidth=lw, label='Pred')
+            ax.set_xlim([500,860])
+        ax.tick_params(labelbottom=True, labelsize=fs)
+        ax.set_ylabel('Indoor Air Temperature')
+        ax.set_xlabel('Time [mins]', fontsize=fs)
+        ax.legend(fontsize=fs)
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/extended_rollout_short', dpi=fig.dpi)
+        plt.close(fig)
+
+        lw = 2.0
+        fs = 12
+        fig,ax = plt.subplots(self.nx+self.nu+self.nd, figsize=(7, 5))
+        labels = ['Indoor Temperature \n (Normalized)']
+        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
+            axe = ax[row]
+            axe.set_ylabel(label, fontsize=fs)
+            axe.plot(t1, 'c', linewidth=lw, label="True")
+            axe.plot(t2, 'm--', linewidth=lw, label='Pred')
+            # axe.plot(input_traj, linewidth=lw)
+            axe.tick_params(labelbottom=False, labelsize=fs)
+            axe.set_xlim([0,2880])
+        axe.tick_params(labelbottom=True, labelsize=fs)
+        axe.legend(fontsize=fs)
+        ax[-2].plot(dist_traj, 'c', linewidth=lw, label='Outdoor Air Temp')
+        ax[-2].set_ylabel("Outdoor Temperature \n (Normalized)", fontsize=fs)
+        ax[-2].tick_params(labelbottom=True, labelsize=fs)
+        ax[-2].set_xlim([0,2880])
+        ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
+        ax[-1].set_xlabel('Time [mins]', fontsize=fs)
+        ax[-1].set_ylabel('HVAC Energy \n (Normalized)', fontsize=fs)
+        ax[-1].tick_params(labelbottom=True, labelsize=fs)
+        ax[-1].set_xlim([0,2880])
+        plt.figtext(0.01, 0.01, self.runName, fontsize=fs)
+        plt.tight_layout()
+        fig.savefig(self.saveDir+'/extended_rollout', dpi=fig.dpi)
+        plt.close(fig)
 
     def DeployModel(self):
         '''
@@ -413,381 +467,6 @@ class BuildingNode(NeuromancerModel):
         self.TrainModel(dataset=None, load=True, test=False)
 
         return self.problem
-
-class ExperimentalThermalModel(NeuromancerModel):
-    def __init__(self, nx:int, nu:int, nd:int, manager, name:str, device:torch.device, debugLevel,
-                 saveDir:typing.Optional[str]=None, nsteps_test:typing.Optional[int]=None):
-        '''
-        Constructor function
-
-        :param nx: (int) number of states
-        :param nu: (int) number of control signals
-        :param nd: (int) number of disturbances
-        :param manager (RunManager) object that keeps track of various model parameters
-        :param name: (str) name of the model
-        :param device: (torch.device) device to run training on
-        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
-        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
-        '''
-        super().__init__(manager, name, device, debugLevel, saveDir)
-
-        self.nx = nx
-        self.nu = nu
-        self.nd = nd
-        if nsteps_test is None:
-            self.nsteps_test = self.nsteps
-        else:
-            self.nsteps_test = nsteps_test
-
-        self.hsizes = self.manager.models[name]['hsizes']
-
-        self.callback = Callback_NODE(debugLevel, self.saveDir)
-
-    def PrepareDataset(self, dataset):
-        '''
-        Prepare data for training and testing of building thermal model
-
-        :param dataset: (dict) normalized dataset split into states (X), inputs (U), and disturbances (D)
-
-        :return trainLoader: (DataLoader) DataLoader object for training
-        :return devLoader: (DataLoader) DataLoader object for validation
-        :return testData: (dict) Batched dataset designated for testing
-        '''
-        n = len(dataset['X'])
-
-        train = {}
-        dev = {}
-        test = {}
-        for key, value in dataset.items():
-            train[key] = value[:int(np.round(n*0.7)),:]
-            dev[key] = value[int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-            test[key] = value[int(np.round(n*0.9)):,:]
-
-        nbatch = len(test['X']) // self.nsteps
-        params = {'dtype': torch.float32, 'device': self.device}
-
-        trainData = DictDataset(
-            {'x': torch.tensor(train['X'].reshape(nbatch*7, self.nsteps, self.nx), **params),
-             'yn': torch.tensor(train['X'].reshape(nbatch*7, self.nsteps, self.nx), **params)[:,0:1,:],
-             'u0': torch.tensor(train['U'].reshape(nbatch*7, self.nsteps, self.nu), **params)[:,0:1,:],
-             'd0': torch.tensor(train['D'].reshape(nbatch*7, self.nsteps, self.nd), **params)[:,0:1,:],
-             'u': torch.tensor(train['U'].reshape(nbatch*7, self.nsteps, self.nu), **params),
-             'd': torch.tensor(train['D'].reshape(nbatch*7, self.nsteps, self.nd), **params)
-            },
-            name='train')
-        # for key, value in trainData.datadict.items():
-        #     print(key, value.shape)
-        trainLoader = DataLoader(trainData, batch_size=self.batch_size,
-                                collate_fn=trainData.collate_fn, shuffle=False)
-        
-        devData = DictDataset(
-            {'x': torch.tensor(dev['X'].reshape(nbatch*2, self.nsteps, self.nx), **params),
-             'yn': torch.tensor(dev['X'].reshape(nbatch*2, self.nsteps, self.nx), **params)[:,0:1,:],
-             'u0': torch.tensor(dev['U'].reshape(nbatch*2, self.nsteps, self.nu), **params)[:,0:1,:],
-             'd0': torch.tensor(dev['D'].reshape(nbatch*2, self.nsteps, self.nd), **params)[:,0:1,:],
-             'u': torch.tensor(dev['U'].reshape(nbatch*2, self.nsteps, self.nu), **params),
-             'd': torch.tensor(dev['D'].reshape(nbatch*2, self.nsteps, self.nd), **params),
-            },
-            name='dev'
-        )
-        # for key, value in devData.datadict.items():
-        #     print(key, value.shape)
-        devLoader = DataLoader(devData, batch_size=self.batch_size,
-                                collate_fn=devData.collate_fn, shuffle=True)
-        
-        nbatch = len(test['X']) // self.nsteps_test
-
-        testData = {
-            'x': torch.tensor(test['X'].reshape(nbatch, self.nsteps_test, self.nx), **params),
-            'yn': torch.tensor(test['X'].reshape(nbatch, self.nsteps_test, self.nx), **params)[:,0:1,:],
-            'u0': torch.tensor(test['U'].reshape(nbatch, self.nsteps_test, self.nu), **params)[:,0:1,:],
-            'd0': torch.tensor(test['D'].reshape(nbatch, self.nsteps_test, self.nd), **params)[:,0:1,:],
-            'u': torch.tensor(test['U'].reshape(nbatch, self.nsteps_test, self.nu), **params),
-            'd': torch.tensor(test['D'].reshape(nbatch, self.nsteps_test, self.nd), **params)
-        }
-        # for key, value in testData.items():
-        #     print(key, value.shape)
-
-        return trainLoader, devLoader, testData
-
-    def CreateModel(self):
-        '''Defines building thermal system'''
-
-        n_latent = 6
-
-        encoder = blocks.MLP(self.nx+self.nu+self.nd, n_latent, bias=True, 
-                             linear_map=torch.nn.Linear,
-                             nonlin=torch.nn.ReLU,
-                             hsizes=[80])
-        encode_sym = Node(encoder, ['yn', 'u0', 'd0'], ['xn'], name='encoder')
-
-        fx = blocks.MLP(n_latent+self.nu+self.nd, n_latent, bias=True, linear_map=torch.nn.Linear,
-                        nonlin=torch.nn.Tanh, hsizes=self.hsizes)
-    
-        fxRK4 = integrators.RK4(fx)
-
-        model = Node(fxRK4, ['xn', 'u', 'd'], ['xn'], name="buildingNODE")
-
-        # model = Node(ThermalModel(self.nx, self.nu, self.nd, self.hsizes),
-        #              ['xn', 'u', 'd', 'mode', 'u_prev', 'u_bin'], ['xn', 'u_bin', 'u_prev'], name='buildingNODE_exp')
-
-        # C = torch.tensor([[1.0]], device=self.device)
-        # ynext = lambda x: x @ C.T
-        # output_model = Node(ynext, ['xn'], ['y'], name='out_obs')
-
-        decoder = blocks.MLP(n_latent, self.nx, bias=True,
-                             linear_map=torch.nn.Linear,
-                             nonlin=torch.nn.ReLU,
-                             hsizes=[80])
-        decode_sym = Node(decoder, ['xn'], ['y'], name='decoder')
-
-        dynamics_model = System([model, decode_sym], name='system', nsteps=self.nsteps)
-        self.model = dynamics_model
-        dynamics_model.to(device=self.device)
-        if self.callback.debugLevel > DebugLevel.NO:
-            dynamics_model.show(self.manager.runPath+'thermalModelDiagram.png')
-
-        x = variable("x")
-        xhat = variable('y')
-
-        referenceLoss = 5.*(xhat == x)^2
-        referenceLoss.name = 'ref_loss'
-
-        onestepLoss = 1.*(xhat[:,1,:] == x[:,1,:])^2
-        onestepLoss.name = 'onestep_loss'
-
-        objectives = [referenceLoss, onestepLoss]
-        constraints = []
-
-        loss = PenaltyLoss(objectives, constraints)
-        
-        self.problem = Problem([encode_sym, dynamics_model], loss)
-        if self.callback.debugLevel > DebugLevel.NO:
-            self.problem.show(self.manager.runPath+'NODE_optim.png')
-
-    def TestModel(self):
-        '''Plots the testing of the building thermal model'''
-        self.testData['name'] = 'test'
-        testOutputs = self.problem(self.testData)
-
-        pred_traj = testOutputs['test_y'].detach().cpu().numpy().reshape(-1,self.nx)
-        true_traj = self.testData['x'].detach().cpu().numpy().reshape(-1,self.nx)
-        input_traj = self.testData['u'].detach().cpu().numpy().reshape(-1,self.nu)
-        dist_traj = self.testData['d'].detach().cpu().numpy().reshape(-1,self.nd)
-        pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
-
-        testMetrics = pd.DataFrame()
-        test_mae = np.mean(np.abs(pred_traj - true_traj))
-        testMetrics['mae'] = [test_mae]
-        testMetrics.to_csv(self.saveDir+'/test_metrics.csv', index=False)
-
-        figsize = 25
-        lw = 4.0
-        fig,ax = plt.subplots(self.nx+self.nu+self.nd, figsize=(figsize, figsize))
-        labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-            axe = ax[row]
-            axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
-            axe.plot(t1, 'c', linewidth=lw, label="True")
-            axe.plot(t2, 'm--', linewidth=lw, label='Pred')
-            axe.plot(input_traj, linewidth=lw, label='setpoint')
-            axe.tick_params(labelbottom=False, labelsize=figsize)
-            axe.set_title("Indoor Air Temperature (Normalized)", fontsize=figsize)
-            axe.set_xlim([0,500])
-            # axe.vlines(np.linspace(30, 270, 9), 0, 1)
-        axe.tick_params(labelbottom=True, labelsize=figsize)
-        axe.legend(fontsize=figsize)
-        ax[-2].plot(dist_traj, 'c', linewidth=lw, label='Outdoor Air Temp')
-        ax[-2].legend(fontsize=figsize)
-        ax[-2].set_title("Outdoor Air Temperature (Normalized)", fontsize=figsize)
-        ax[-2].tick_params(labelbottom=True, labelsize=figsize)
-        ax[-2].set_xlim([0,500])
-        # ax[-1].plot(input_traj, linewidth=lw, label='HVAC Consumption')
-        ax[-1].legend(fontsize=figsize)
-        ax[-1].set_xlabel('$time$', fontsize=figsize)
-        ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
-        ax[-1].tick_params(labelbottom=True, labelsize=figsize)
-        ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
-        ax[-1].set_xlim([0,500])
-        plt.figtext(0.01, 0.01, self.runName, fontsize=figsize)
-        plt.tight_layout()
-        fig.savefig(self.saveDir+'/building_rollout', dpi=fig.dpi)
-        plt.close(fig)
-
-        # lw = 2.0
-        # fs = 12
-        # fig,ax = plt.subplots(self.nx, figsize=(7, 5))
-        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        # for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-        #     ax.plot(t1, 'c', linewidth=lw, label="True")
-        #     ax.plot(t2, 'm--', linewidth=lw, label='Pred')
-        #     ax.tick_params(labelbottom=False, labelsize=fs)
-        #     ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=fs)
-        #     ax.tick_params(labelbottom=True, labelsize=fs)
-        # # ax.legend(fontsize=fs, loc='lower left', bbox_to_anchor=(0.78,1), ncol=2)
-        #     ax.legend(fontsize=fs)
-        # plt.tight_layout()
-        # fig.savefig(self.saveDir+'/justTemp_rollout', dpi=fig.dpi)
-        # plt.close(fig)
-
-        # Plot training and validation loss
-        self.PlotLoss()
-
-class ModeClassifier(NeuromancerModel):
-    def __init__(self, nm:int, nu:int,  manager, name:str, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
-        '''
-        Constructor function
-
-        :param nm: (int) number of hvac modes
-        :param nu: (int) number of control signals
-        :param manager (RunManager) object that keeps track of various model parameters
-        :param name: (str) name of the model
-        :param device: (torch.device) device to run training on
-        :param debugLevel: (int or DebugLevel) sets the level of debug detail outputted from training
-        :param saveDir: (str) relative path to where the model should be saved/loaded from, defaults to value of 'name'
-        '''
-        super().__init__(manager, name, device, debugLevel, saveDir)
-
-        self.nm = nm
-        self.nu = nu
-
-        self.hsizes = self.manager.models[name]['hsizes']
-
-    def PrepareDataset(self, dataset):
-        '''
-        Prepare dataset for training
-        '''
-        n = len(dataset['M'])
-
-        train = {}
-        train['M'] = dataset['M'][:int(np.round(n*0.7)),:]
-        train['U'] = dataset['U'][:int(np.round(n*0.7)),:]
-
-        dev = {}
-        dev['M'] = dataset['M'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-        dev['U'] = dataset['U'][int(np.round(n*0.7)):int(np.round(n*0.9)),:]
-
-        test = {}
-        test['M'] = dataset['M'][int(np.round(n*0.9)):,:]
-        test['U'] = dataset['U'][int(np.round(n*0.9)):,:]
-
-        nbatch = len(test['M']) // self.nsteps
-
-        trainM = train['M'].reshape(nbatch*7, self.nsteps, self.nm)
-        trainM = torch.tensor(trainM, dtype=torch.float32, device=self.device)
-        trainU = train['U'].reshape(nbatch*7, self.nsteps, self.nu)
-        trainU = torch.tensor(trainU, dtype=torch.float32, device=self.device)
-        trainData = DictDataset({'m': trainM, 'u_cool': trainU}, name='train')
-        trainLoader = DataLoader(trainData, batch_size=self.batch_size,
-                                collate_fn=trainData.collate_fn, shuffle=True)
-        
-        devM = dev['M'].reshape(nbatch*2, self.nsteps, self.nm)
-        devM = torch.tensor(devM, dtype=torch.float32, device=self.device)
-        devU = dev['U'].reshape(nbatch*2, self.nsteps, self.nu)
-        devU = torch.tensor(devU, dtype=torch.float32, device=self.device)
-        devData = DictDataset({'m': devM, 'u_cool': devU}, name='dev')
-        devLoader = DataLoader(devData, batch_size=self.batch_size,
-                                collate_fn=devData.collate_fn, shuffle=True)
-        
-        testM = test['M'].reshape(nbatch, self.nsteps, self.nm)
-        testM = torch.tensor(testM, dtype=torch.float32, device=self.device)
-        testU = test['U'].reshape(nbatch, self.nsteps, self.nu)
-        testU = torch.tensor(testU, dtype=torch.float32, device=self.device)
-        testData = {'m': testM, 'u_cool': testU}
-
-        return trainLoader, devLoader, testData
-
-    def CreateModel(self):
-        '''Defines HVAC mode classifier'''
-        net = blocks.MLP_bounds(
-            insize=self.nu,
-            outsize=self.nm,
-            hsizes=self.hsizes,
-            nonlin=nn.Sigmoid
-        )
-        self.model = Node(net, ['u_cool'], ['u'], name='Classifier')
-
-        system = System([self.model], name='System', nsteps=self.nsteps)
-        system.to(device=self.device)
-
-        m = variable("m")
-        mhat = variable('u')
-
-        referenceLoss = 5.*(mhat == m)^2
-        referenceLoss.name = 'ref_loss'
-
-        onestepLoss = 1.*(mhat[:,1,:] == m[:,1,:])^2
-        onestepLoss.name = 'onestep_loss'
-
-        objectives = [referenceLoss, onestepLoss]
-        constraints = []
-
-        loss = PenaltyLoss(objectives, constraints)
-
-        self.problem = Problem([system], loss)
-
-    def TestModel(self):
-        '''
-        Create plots from test data
-        '''
-        dynamics_model = self.problem.nodes[0]
-        dynamics_model.nsteps = self.testData['m'].shape[1]
-
-        testOutputs = dynamics_model(self.testData)
-
-        pred_traj = testOutputs['u'].detach().cpu().numpy().reshape(-1,self.nm)
-        true_traj = self.testData['m'].detach().cpu().numpy().reshape(-1,self.nm)
-        input_traj = self.testData['u_cool'].detach().cpu().numpy().reshape(-1,self.nu)
-        pred_traj, true_traj = pred_traj.transpose(1,0), true_traj.transpose(1,0)
-
-        testMetrics = pd.DataFrame()
-        test_mae = np.mean(np.abs(pred_traj - true_traj))
-        testMetrics['mae'] = [test_mae]
-        testMetrics.to_csv(self.saveDir+'/test_metrics.csv', index=False)
-
-        figsize = 25
-        lw = 4.0
-        fig,ax = plt.subplots(self.nm+self.nu, figsize=(figsize, figsize))
-        labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-            axe = ax[row]
-            axe.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
-            axe.plot(t1, 'c', linewidth=lw, label="True")
-            axe.plot(t2, 'm--', linewidth=lw, label='Pred')
-            axe.tick_params(labelbottom=False, labelsize=figsize)
-            axe.set_title("Class (Normalized)", fontsize=figsize)
-            axe.set_xlim(0,1000)
-        axe.tick_params(labelbottom=True, labelsize=figsize)
-        axe.legend(fontsize=figsize)
-        ax[-1].plot(input_traj, linewidth=lw)
-        ax[-1].set_xlabel('$time$', fontsize=figsize)
-        ax[-1].set_ylabel('$u$', rotation=0, labelpad=20, fontsize=figsize)
-        ax[-1].tick_params(labelbottom=True, labelsize=figsize)
-        ax[-1].set_title("HVAC Consumption (Normalized)", fontsize=figsize)
-        ax[-1].set_xlim(0,1000)
-        plt.tight_layout()
-        fig.savefig(self.saveDir+'/rollout', dpi=fig.dpi)
-        plt.close(fig)
-
-        figsize = 6
-        lw = 2.0
-        fig,ax = plt.subplots(self.nm, figsize=(figsize, 4))
-        # labels = [f'$y_{k}$' for k in range(len(true_traj))]
-        labels = ['HVAC Mode']
-        for row, (t1, t2, label) in enumerate(zip(true_traj, pred_traj, labels)):
-            ax.set_ylabel(label, rotation=0, labelpad=20, fontsize=figsize)
-            ax.plot(t1, 'c', linewidth=lw, label="True")
-            ax.plot(t2, 'm--', linewidth=lw, label='Pred')
-            ax.tick_params(labelbottom=False, labelsize=figsize)
-            ax.set_xlim(0,1000)
-        ax.tick_params(labelbottom=True, labelsize=figsize)
-        ax.legend(fontsize=figsize)
-        plt.tight_layout()
-        fig.savefig(self.saveDir+'/mode', dpi=fig.dpi)
-        plt.close(fig)
-
-        # Plot training and validation loss
-        self.PlotLoss()
 
 class ControllerSystem(NeuromancerModel):
     '''
@@ -813,7 +492,7 @@ class ControllerSystem(NeuromancerModel):
         system: (neuromancer.System) whole control system
     '''
     def __init__(self, nx:int, nu:int, nd:int, nd_obs:int, ni:int, ny:int, y_idx:int, d_idx:list[int], manager, name:str, norm,
-                 thermalModel:Node, classifier:Node, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
+                 thermalModel:Node, device:torch.device, debugLevel, saveDir:typing.Optional[str]=None):
         '''
         Constructor
 
@@ -845,17 +524,32 @@ class ControllerSystem(NeuromancerModel):
         self.y_idx = y_idx
         self.d_idx = d_idx
 
-        self.norm = norm
+        modelParams = manager.models[name]
 
-        self.weights = manager.models[name]['weights']
-        self.hsizes = manager.models[name]['hsizes']
-        self.n_samples = manager.models[name]['train_params']['n_samples']
+        self.weights = modelParams['weights']
+        self.hsizes = modelParams['hsizes']
+
+        train_params = modelParams['train_params']
+        self.nsteps = train_params['nsteps']
+        self.n_samples = train_params['n_samples']
+        self.batch_size = train_params['batch_size']
+        self.max_epochs = train_params['max_epochs']
+        self.patience = train_params['patience']
+        self.warmup = train_params['warmup']
+        self.lr = train_params['lr']
+
+        if 'gradProj' in modelParams.keys():
+            self.gradProj = True
+            self.gpParams = modelParams['gradProj']
+        else:
+            self.gradProj = False
+
+        self.norm = norm
 
         self.batSize = 16.4
         self.ratedKW = 9.6
 
         self.thermalModel = thermalModel
-        self.classifier = classifier
 
         self.callback = Callback_Controller(debugLevel, self.saveDir)
 
@@ -866,18 +560,7 @@ class ControllerSystem(NeuromancerModel):
     def CreateModel(self):
         '''Defines control system'''
         coolingNet = blocks.MLP_bounds(
-            insize=self.ny + 2*self.nref + self.nd_obs + self.ni + 1,
-            outsize=self.nu,
-            hsizes=self.hsizes,
-            nonlin=nn.GELU,
-            min=-1,
-            max=2
-        )
-
-        coolPolicy = Node(coolingNet, ['y', 'ymin', 'ymax', 'd_obs', 'cost', 'dr', 'hvacPower'], ['u'], name='coolPolicy', groupName='HVAC')
-
-        heatingNet = blocks.MLP_bounds(
-            insize=self.ny + 2*self.nref + self.nd_obs + self.ni + 1,
+            insize=self.ny + 2*self.nref + self.nd_obs + self.ni,
             outsize=self.nu,
             hsizes=self.hsizes,
             nonlin=nn.GELU,
@@ -885,43 +568,49 @@ class ControllerSystem(NeuromancerModel):
             max=1
         )
 
-        heatPolicy = Node(heatingNet, ['y', 'ymin', 'ymax', 'd_obs', 'cost', 'dr', 'hvacPower'], ['u_heat'], name='heatPolicy', groupName='HVAC')
+        coolPolicy = Node(coolingNet, ['y', 'ymin', 'ymax', 'd_obs', 'cost', 'powerRef'], ['u_hvac'], name='coolPolicy', groupName='HVAC')
 
-        hvacDenorm = lambda x: x * (self.norm.dataInfo['u']['max'] - self.norm.dataInfo['u']['min']) + self.norm.dataInfo['u']['min']
-        hvacTruePower = Node(hvacDenorm, ['u_bin'], ['hvacPower'], name='hvacTruePower', groupName='HVAC')
+        heatingNet = blocks.MLP_bounds(
+            insize=self.ny + 2*self.nref + self.nd_obs + self.ni,
+            outsize=self.nu,
+            hsizes=self.hsizes,
+            nonlin=nn.GELU,
+            min=0,
+            max=1
+        )
+
+        heatPolicy = Node(heatingNet, ['y', 'ymin', 'ymax', 'd_obs', 'cost', 'powerRef'], ['u_heat'], name='heatPolicy', groupName='HVAC')
 
         batNet = blocks.MLP_bounds(
-        insize=self.ni+4,
-        outsize=self.nu,
-        hsizes=self.hsizes,
-        nonlin=nn.GELU,
-        min=-self.ratedKW,
-        max=self.ratedKW)
-        batPolicy = Node(batNet, ['hvacPower', 'batPower', 'stored', 'cost', 'dr', 'batRef'], ['u_bat'], name='batPolicy', groupName='Battery')
+            insize=self.ni+4,
+            outsize=self.nu,
+            hsizes=self.hsizes,
+            nonlin=nn.GELU,
+            min=-self.ratedKW,
+            max=self.ratedKW)
+        batPolicy = Node(batNet, ['u_hvac', 'stored', 'cost', 'powerRef', 'batRef', 'batMax'], ['u_bat'], name='batPolicy', groupName='Battery')
 
-        batModel = Node(BatteryModel(eff=0.95, capacity=self.batSize, nx=1, nu=1), ['stored', 'u_bat'], ['stored'], name='batModel', groupName='Battery')
+        batModel = Node(BatteryModel(eff=0.95, capacity=self.batSize, chargeRate=2, nx=1, nu=1, dt=60), ['stored', 'u_hvac', 'u_bat'], ['stored'], name='batModel', groupName='Battery')
 
-        batTruePower = Node(batCorrect(self.batSize), ['stored', 'u_bat'], ['batPower'], name='batTruePower', groupName='Battery')
-        # batTruePower = Node(lambda x: torch.gradient(x), ['stored'], ['batPower'], name='batTruePower', groupName='Battery')
+        encoder = self.thermalModel.nodes[0]
+        thermalModel = self.thermalModel.nodes[1].nodes[0]
+        decoder = self.thermalModel.nodes[1].nodes[1]
 
         # Freeze thermal model
-        thermal = self.thermalModel.nodes[0]
-        out_obs = self.thermalModel.nodes[1]
-        for p in thermal.parameters():
-            p.requires_grad=False
-        for p in self.classifier.parameters():
-            p.requires_grad=False
+        encoder.freeze()
+        thermalModel.freeze()
+        decoder.freeze()
 
-        for item in self.thermalModel.nodes:
-            item.groupName = 'HVAC'
-        self.classifier.groupName = 'HVAC'
+        encoder.groupName = 'HVAC'
+        thermalModel.groupName = 'HVAC'
+        decoder.groupName = 'HVAC'
 
         dist_model = lambda d: d[:, self.d_idx]
         dist_obs = Node(dist_model, ['d'], ['d_obs'], name='dist_obs', groupName='HVAC')
 
         # closed loop system model
-        self.system = System([dist_obs, coolPolicy, thermal, hvacTruePower, out_obs,
-                              batPolicy, batModel, batTruePower
+        self.system = System([dist_obs, coolPolicy, thermalModel, decoder,
+                              batPolicy, batModel,
                               ],
                         nsteps=self.nsteps,
                         drop_init_cond=True,
@@ -935,72 +624,51 @@ class ControllerSystem(NeuromancerModel):
         # DPC objectives and constraints
         # variables
         y = variable('y')
-        u = variable('u')
-        u_bin = variable('u_bin')
+        u_hvac = variable('u_hvac')
         ymin = variable('ymin')
         ymax = variable('ymax')
-        dr = variable('dr')         # Varies between -1 and 1
+
         cost = variable('cost')
         u_bat = variable('u_bat')
         stored = variable('stored')
         batRef = variable('batRef')
-        hvacPower = variable('hvacPower')
-        batPower = variable('batPower')
+        batMax = variable('batMax')
+        powerRef = variable('powerRef')
 
         # objectives
         # u_tot = u_bat
-        u_tot = hvacPower + batPower
-        u_tot.name = 'u_tot'
+        u_tot = u_hvac + u_bat
+        u_tot.key = 'u_tot'
 
-        dr_loss = (dr * u_tot).minimize(weight=self.weights['dr_loss'], name='dr_loss')
+        u_load = u_hvac + 0.0
+
         cost_loss = (cost * u_tot).minimize(weight=self.weights['cost_loss'], name='cost_loss')
         delta_loss = (u_tot[1:]-u_tot[:-1]).minimize(weight=self.weights['delta_loss'], name='delta_loss')
-
-        setpoint_loss = u == self.weights['setpoint_loss'] * ymax
-        hvac_loss = u_bin == self.weights['hvac_loss'] * torch.zeros([self.batch_size, self.nsteps, 1])
-        # hvac_cost_loss = hvacPower.minimize(weight=1.0, name='hvac_cost_loss')
-        bat_loss = u_bat == self.weights['bat_loss'] * torch.zeros([self.batch_size, self.nsteps, 1])
-        bat_max_loss = torch.abs(u_bat).minimize(weight=self.weights['bat_max_loss'], metric=torch.max, name='bat_max_loss')
-        # bat_loss = u_bat.minimize(metric=torch.max, weight=self.weights['bat_loss'], name='bat_loss')
-        # bat_cost_loss = batPower.minimize(weight=3.0, name='bat_cost_loss')
-        u_tot_loss = torch.abs(u_tot).minimize(weight=1.0, metric=torch.max, name='u_tot_max')
 
         # thermal comfort constraints
         state_lower_bound_penalty = self.weights['x_min'] * (y > ymin)
         state_upper_bound_penalty = self.weights['x_max'] * (y < ymax)
-        # hvac_lower = 1.0 * (u > 0.0)
-        # hvac_upper = 1.0 * (u < 1.0)
-        # bat_lower = 1.0 * (u_bat > -10)
-        # bat_upper = 1.0 * (u_bat < 10)
-
-        # batEqCon = y == batModel(stored, u_bat)
 
         bat_life_lower_bound_penalty = self.weights['bat_min'] * (stored > batRef)
+        bat_life_upper_bound_penalty = self.weights['bat_max'] * (stored < batMax)
+        bat_load_following_limit = self.weights['follow_limit'] * (u_bat > -1*u_load)
+        coord_power_limit = self.weights['coordRef'] * (u_tot < powerRef)
 
         # objectives and constraints names for nicer plot
         state_lower_bound_penalty.name = 'x_min'
         state_upper_bound_penalty.name = 'x_max'
         bat_life_lower_bound_penalty.name = 'bat_life_min'
+        bat_life_upper_bound_penalty.name = 'bat_life_max'
+        bat_load_following_limit.name = 'bat_load_follow'
+        coord_power_limit.name = 'coord_power'
 
         # list of constraints and objectives
-        # objectives = [hvac_cost_loss, hvac_loss, bat_cost_loss, bat_loss]
-        objectives = [cost_loss, bat_loss, hvac_loss, setpoint_loss, bat_max_loss]
-        constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty]
-        # constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_lower, bat_upper]
-
-        # proj = solvers.GradientProjection(constraints=[state_lower_bound_penalty, state_upper_bound_penalty],
-        #                                   input_keys=["y"],
-        #                                   num_steps=10,
-        #                                   step_size=50,
-        #                                   decay=0.1,
-        #                                   name='proj')
+        objectives = [cost_loss, delta_loss]
+        constraints = [state_lower_bound_penalty, state_upper_bound_penalty, bat_life_lower_bound_penalty, bat_life_upper_bound_penalty, bat_load_following_limit, coord_power_limit]
 
         # Problem construction
-        # nodes = [self.system, proj]
-        nodes = [self.system]
-        # loss = PenaltyLoss(objectives, constraints)
-        loss = BarrierLoss(objectives, constraints)
-        # self.problem = Problem(nodes, loss, grad_inference=True)
+        nodes = [encoder, self.system]
+        loss = PenaltyLoss(objectives, constraints)
         self.problem = Problem(nodes, loss)
         if self.callback.debugLevel > DebugLevel.NO:
             self.problem.show(self.manager.runPath+"MPC_optim.png")
@@ -1053,12 +721,16 @@ class ControllerSystem(NeuromancerModel):
         
     def TestModel(self, dataset, tempMin, tempMax):
         '''Plots the testing of the controller system'''
+
+        # Plot training and validation loss
+        self.PlotLoss()
+
         nsteps_test = 1440
         # nsteps_test = 60
 
         # generate reference
         np_refs = (tempMin.cpu() + self.norm.normDelta(4.0, keys=['y'])) * np.ones(nsteps_test)
-        np_refs = psl.signals.step(nsteps_test, 1, min=tempMin, max=tempMax, randsteps=5, rng=self.rng)
+        np_refs = psl.signals.step(nsteps_test, 1, min=tempMin.cpu(), max=tempMax.cpu(), randsteps=5, rng=self.rng)
         ymin_val = torch.tensor(np_refs, dtype=torch.float32, device=self.device).reshape(1, nsteps_test, 1)
         ymax_val = ymin_val + self.norm.normDelta(2.0, keys=['y'])
         # get disturbance signal
@@ -1070,71 +742,96 @@ class ControllerSystem(NeuromancerModel):
         # initial data for closed loop sim
         x0 = torch.tensor(self.Get_X0(dataset['X']),
                           dtype=torch.float32, device=self.device).reshape(1,1,self.nx)
-        dr = torch.tensor(psl.signals.step(nsteps_test, 1, min=0, max=1, randsteps=5, rng=self.rng), dtype=torch.float32).reshape(1, nsteps_test, 1)
+        dr = torch.tensor(psl.signals.step(nsteps_test, 1, min=1, max=10, randsteps=5, rng=self.rng), dtype=torch.float32, device=self.device).reshape(1, nsteps_test, 1)
         # dr = torch.tensor(np.zeros((1, nsteps_test+1, 1)), dtype=torch.float32)
         stored0 = torch.tensor(self.rng.uniform(0,self.batSize,[1,1,1]), dtype=torch.float32, device=self.device)
         batRefYear = np.tile(pd.read_csv('socSchedule.csv', header=None).to_numpy(), (len(dataset['D']) // 1440,1)) * self.batSize
         batRef = torch.tensor(self.Get_D(batRefYear, nsteps_test, start_idx), dtype=torch.float32, device=self.device).unsqueeze(0)
         batMax = torch.tensor(np.ones((1,nsteps_test,1))*0.9*self.batSize, dtype=torch.float32, device=self.device)
 
-        data = {'xn': x0,
+        data = {'yn': x0,
                 'y': x0[:,:,self.y_idx],
                 'ymin': ymin_val,
                 'ymax': ymax_val,
                 'd': torch_dist,
                 'cost': torch_price,
-                'dr': dr,
+                'powerRef': dr,
                 'stored': stored0,
                 'batRef': batRef,
                 'batMax': batMax,
-                'hvacPower': torch.zeros_like(x0),
-                'batPower': torch.zeros_like(x0),
-                'mode': torch.ones_like(torch_dist) * 2.0,
-                'u_prev': torch.zeros_like(x0),
-                'u_bin': torch.zeros_like(x0)}
+                'name': 'test'}
         print('Input dataset')
         for key, value in data.items():
+            if key == 'name':
+                continue
             print(key, value.shape)
         self.system.nsteps = nsteps_test
-        trajectories = self.system(data)
+        outputs = self.problem(data)
+
+        trajectories = {'y': outputs['test_y'],
+                        'ymin': outputs['test_ymin'],
+                        'ymax': outputs['test_ymax'],
+                        'cost': outputs['test_cost'],
+                        'powerRef': outputs['test_powerRef'],
+                        'd': outputs['test_d'],
+                        'd_obs': outputs['test_d_obs'],
+                        'u_hvac': outputs['test_u_hvac'],
+                        'u_bat': outputs['test_u_bat'],
+                        'batRef': outputs['test_batRef'],
+                        'batMax': outputs['test_batMax'],
+                        'stored': outputs['test_stored']}
+        
         print('Output trajectories')
         for key, value in trajectories.items():
-            print(key, value.shape)
+            if isinstance(value, torch.Tensor):
+                print(key, value.shape)
+            else:
+                continue
         print(trajectories.keys())
 
         traj_df = pd.DataFrame()
         for key, value in trajectories.items():
-            print(key)
+            if key == 'name':
+                continue
             if value.shape[2] == 1:
                 traj_df[key] = value.detach().cpu().numpy().flatten()[:nsteps_test]
             else:
                 for i in range(value.shape[2]):
-                    traj_df[key+f"_{i}"] = value.detach().cpu().numpy()[:,:,i].flatten()[:nsteps_test]
-        if not(os.path.exists('Saved Figures')):
-            os.makedirs('Saved Figures')
+                    traj_df[key+f"_{i}"] = value.detach().cpu().numpy()[:,:,i].flatten()
         traj_df.to_csv('Saved Figures/trajectories.csv', index=False)
 
+        # Denormalize the output trajectories
+        denorm_trajectories = self.norm.denorm(trajectories, ['y', 'y', 'y', 'p', 'leave', 'd', 'd', 'leave', 'leave', 'leave', 'leave'])
+
+        detraj_df = pd.DataFrame()
+        for key, value in denorm_trajectories.items():
+            if value.shape[2] == 1:
+                detraj_df[key] = value.detach().cpu().numpy().flatten()[:nsteps_test]
+            else:
+                for i in range(value.shape[2]):
+                    detraj_df[key+f"_{i}"] = value.detach().cpu().numpy()[:,:,i].flatten()
+        detraj_df.to_csv('Saved Figures/denorm_trajectories.csv', index=False)
+
         # constraints bounds
-        Ymin = trajectories['ymin'].detach().cpu().reshape(nsteps_test, self.nref)
-        Ymax = trajectories['ymax'].detach().cpu().reshape(nsteps_test, self.nref)
+        Ymin = denorm_trajectories['ymin'].detach().cpu().reshape(nsteps_test, self.nref)
+        Ymax = denorm_trajectories['ymax'].detach().cpu().reshape(nsteps_test, self.nref)
 
         numPlots = 4
         fig, ax = plt.subplots(numPlots, figsize=(20,16))
-        ax[0].plot(trajectories['y'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=3)
+        ax[0].plot(denorm_trajectories['y'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=3)
         ax[0].plot(Ymin, '--', linewidth=3, c='k')
         ax[0].plot(Ymax, '--', linewidth=3, c='k')
         ax[0].set_ylabel('y', fontsize=26)
         # ax[0].set(ylim=[10,30])
-        ax[0].plot(trajectories['u'].detach().cpu().reshape(nsteps_test, self.nu), linewidth=3)
-        ax[1].plot(trajectories['u_bin'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[1].plot(denorm_trajectories['u_hvac'].detach().cpu().reshape(nsteps_test, self.nu), linewidth=3)
+        ax[1].plot(denorm_trajectories['powerRef'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='powerRef')
         ax[1].set_ylabel('u', fontsize=26)
         ax[1].set(ylim=(-0.1,1.1))
-        ax[2].plot(trajectories['d'].detach().cpu().reshape(nsteps_test, self.nd), linewidth=3)
+        ax[2].plot(denorm_trajectories['d'].detach().cpu().reshape(nsteps_test, self.nd), linewidth=3)
         ax[2].set_ylabel('d', fontsize=26)
         # ax[2].set_xlabel('Time [mins]', fontsize=26)
-        ax[3].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='dr')
-        ax[3].plot(trajectories['cost'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='cost')
-        ax[3].set_ylabel('dr', fontsize=26)
+        ax[3].plot(denorm_trajectories['cost'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='cost')
+        ax[3].set_ylabel('cost', fontsize=26)
         ax[3].set_xlabel('Time [mins]', fontsize=26)
         ax[3].legend(fontsize=26)
         for i in range(numPlots):
@@ -1150,17 +847,16 @@ class ControllerSystem(NeuromancerModel):
 
         numPlots = 3
         fig, ax = plt.subplots(numPlots, figsize=(16,16))
-        ax[0].plot(trajectories['stored'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=3)
-        ax[0].plot(trajectories['batRef'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
-        ax[0].plot(trajectories['batMax'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[0].plot(denorm_trajectories['stored'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=3)
+        ax[0].plot(denorm_trajectories['batRef'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[0].plot(denorm_trajectories['batMax'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
         ax[0].set_ylabel('stored', fontsize=26)
         # ax[0].set(ylim=[10,30])
-        ax[1].plot(trajectories['u_bat'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
-        ax[1].plot(trajectories['batPower'].detach().cpu().reshape(nsteps_test,1), linewidth=3)
+        ax[1].plot(denorm_trajectories['u_bat'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[1].plot(denorm_trajectories['powerRef'].detach().cpu().reshape(nsteps_test,1), linewidth=3)
         ax[1].set_ylabel('u_bat', fontsize=26)
-        ax[2].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='dr')
-        ax[2].plot(trajectories['cost'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='cost')
-        ax[2].set_ylabel('dr', fontsize=26)
+        ax[2].plot(denorm_trajectories['cost'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='cost')
+        ax[2].set_ylabel('cost', fontsize=26)
         ax[2].set_xlabel('Time [mins]', fontsize=26)
         ax[2].legend(fontsize=26)
         for i in range(numPlots):
@@ -1176,15 +872,14 @@ class ControllerSystem(NeuromancerModel):
 
         numPlots = 3
         fig, ax = plt.subplots(numPlots, figsize=(16,16))
-        ax[0].plot(trajectories['batPower'].detach().cpu().reshape(nsteps_test, self.ny) + 
-                   trajectories['hvacPower'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=3)
+        ax[0].plot(denorm_trajectories['u_bat'].detach().cpu().reshape(nsteps_test, self.ny) + 
+                   denorm_trajectories['u_hvac'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=3)
         ax[0].set_ylabel('power [kW]', fontsize=26)
         # ax[0].set(ylim=[10,30])
-        ax[1].plot(trajectories['d'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
+        ax[1].plot(denorm_trajectories['d'].detach().cpu().reshape(nsteps_test, 1), linewidth=3)
         ax[1].set_ylabel('d', fontsize=26)
-        ax[2].plot(trajectories['dr'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='dr')
-        ax[2].plot(trajectories['cost'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='cost')
-        ax[2].set_ylabel('dr', fontsize=26)
+        ax[2].plot(denorm_trajectories['cost'].detach().cpu().reshape(nsteps_test, 1), linewidth=3, label='cost')
+        ax[2].set_ylabel('cost', fontsize=26)
         ax[2].set_xlabel('Time [mins]', fontsize=26)
         ax[2].legend(fontsize=26)
         for i in range(numPlots):
@@ -1202,12 +897,12 @@ class ControllerSystem(NeuromancerModel):
         lw = 3
         fs = 26
         fig, ax = plt.subplots(numPlots, figsize=(10,8))
-        ax[0].plot(trajectories['y'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=lw)
-        ax[0].plot(Ymin, '--', linewidth=lw, c='k')
-        ax[0].plot(Ymax, '--', linewidth=lw, c='k')
+        ax[0].plot(denorm_trajectories['y'].detach().cpu().reshape(nsteps_test, self.ny), linewidth=lw)
+        # ax[0].plot(Ymin, '--', linewidth=lw, c='k')
+        # ax[0].plot(Ymax, '--', linewidth=lw, c='k')
         ax[0].set_ylabel('y', fontsize=fs)
         # ax[0].set(ylim=[10,30])
-        ax[1].plot(trajectories['u'].detach().cpu().reshape(nsteps_test, self.nu), linewidth=lw)
+        ax[1].plot(denorm_trajectories['u_hvac'].detach().cpu().reshape(nsteps_test, self.nu), linewidth=lw)
         ax[1].set_ylabel('u', fontsize=fs)
         ax[1].set(ylim=(-0.1,1.1))
         for i in range(numPlots):
@@ -1219,38 +914,6 @@ class ControllerSystem(NeuromancerModel):
         plt.tight_layout()
         plt.savefig(self.saveDir+'/simplified_rollout', dpi=fig.dpi)
         plt.close(fig)
-
-        # # Solution to pNLP via Neuromancer
-        # data['name'] = 'test'
-        # model_out = self.problem(data)
-        # x_nm = model_out['test_' + "stored"].detach().numpy()
-        # y_nm = model_out['test_' + "u_bat"].detach().numpy()
-
-        # # intermediate projection steps
-        # sol_map = self.problem.nodes[0]
-        # proj = self.problem.nodes[1]
-        # num_steps = proj.num_steps
-        # x_proj = sol_map(data)
-        # proj.num_steps = 1    # set projections steps to 1 for visualisation
-        # X_projected = [np.concatenate([x_proj['stored'][:,:60,:].detach().numpy(), x_proj['u_bat'].detach().numpy()],axis=2)]
-        # for steps in range(num_steps):
-        #     proj_inputs = {**data, **x_proj}
-        #     x_proj = proj(proj_inputs)
-        #     X_projected.append(np.concatenate([x_proj['stored'][:,:60,:].detach().numpy(), x_proj['u_bat'].detach().numpy()], axis=2))
-        # projected_steps = np.concatenate(X_projected, axis=0)
-        # print(projected_steps.shape)
-
-        # # plot optimal solutions CasADi vs Neuromancer
-        # ax[0].plot(x_nm[0,:,0], label='NeuroMANCER')
-        # # plot projected steps
-        # ax[1].plot(y_nm[0,:,0], label='NeuroMANCER')
-        # for i in range(projected_steps.shape[0]):
-        #     ax[0].plot(projected_steps[i,:, 0], label='projection steps')
-        #     ax[1].plot(projected_steps[i,:, 1], label='projection steps')
-        # plt.savefig(self.saveDir+'/grad_proj', dpi = fig.dpi)
-
-        # Plot training and validation loss
-        self.PlotLoss()
 
     def PrepareDataset(self, dataset, xmin_range, name='train'):
         '''
@@ -1267,11 +930,10 @@ class ControllerSystem(NeuromancerModel):
         batched_xmax = batched_xmin + batched_range
 
         bat_range = torch.distributions.Uniform(0.2 * self.batSize, 0.8 * self.batSize)
-        batched_batRef = bat_range.sample((self.n_samples, 1, self.nref)).repeat(1, self.nsteps, 1)
+        batched_batRef = bat_range.sample((self.n_samples, 1, self.nref)).repeat(1, self.nsteps, 1).to(device=self.device)
         # batched_batMax = torch.tensor(np.ones((self.n_samples,self.nsteps+1,1))*0.9*self.batSize, dtype=torch.float32, device=self.device)
         batched_batMax = torch.clamp(batched_batRef + torch.tensor(self.rng.uniform(low=0.1*self.batSize, high=0.8*self.batSize, size=(self.n_samples, 1, self.nref)), dtype=torch.float32, device=self.device), min=None, max=self.batSize)
-
-        batched_dr = torch.tensor(self.rng.uniform(low=-1, high=1, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps, 1)
+        batched_dr = torch.tensor(self.rng.uniform(low=0, high=5, size=(self.n_samples, 1, 1)), dtype=torch.float32, device=self.device).repeat(1, self.nsteps, 1)
         
         # sampled disturbance trajectories from simulation model
         temp_d = []
@@ -1284,33 +946,24 @@ class ControllerSystem(NeuromancerModel):
                                         dtype=torch.float32, device=self.device))
         batched_dist = torch.stack(temp_d)
         batched_price = torch.stack(temp_i)
-        batched_mode = torch.ones_like(batched_dist) * 2.0
 
         # sampled initial conditions
         batched_x0 = torch.stack([torch.tensor(self.Get_X0(dataset['X']),
                                                dtype=torch.float32, device=self.device).unsqueeze(0)
                                                for _ in range(self.n_samples)])
         batched_stored0 = torch.tensor(self.rng.uniform(0,self.batSize,[self.n_samples,1,1]), dtype=torch.float32, device=self.device)
-        batched_hvacPower = torch.zeros_like(batched_x0)
-        batched_batPower = torch.zeros_like(batched_x0)
-        batched_prevHvac = torch.zeros_like(batched_x0)
 
         data = DictDataset(
-            {"xn": batched_x0,
+            {"yn": batched_x0,
             "y": batched_x0[:,:,self.y_idx],
             "ymin": batched_xmin,
             "ymax": batched_xmax,
             "d": batched_dist,
             "cost": batched_price,
-            'dr': batched_dr,
+            'powerRef': batched_dr,
             "stored": batched_stored0,
             "batRef": batched_batRef,
-            "batMax": batched_batMax,
-            "hvacPower": batched_hvacPower,
-            "batPower": batched_batPower,
-            "mode": batched_mode,
-            "u_prev": batched_prevHvac,
-            "u_bin": batched_prevHvac},
+            "batMax": batched_batMax},
             name=name,
         )
         # print(f'-----{name}-----')
@@ -1341,98 +994,26 @@ class ControllerSystem(NeuromancerModel):
         :return: Selected slice of disturbance data
         '''
         return data[start_idx:start_idx+nsim, :]
-    
-class ThermalModel(nn.Module):
-    def __init__(self, nx, nu, nd, hsizes):
-        super().__init__()
-
-        # self.deadband = 0.5 / (24.444 - 18)
-        self.deadband = 0.15
-        self.mode_lock = 0
-
-        fx = blocks.MLP(insize=nx+nu+nd,
-                        outsize=nx,
-                        bias=True,
-                        linear_map=torch.nn.Linear,
-                        nonlin=torch.nn.Sigmoid,
-                        hsizes=hsizes)
         
-        self.fxRK4 = integrators.RK4(fx)
-
-        self.debug = False
-
-    def forward(self, x, u, d, m, prev, u_bin):
-        assert len(x.shape) == 2
-        assert len(u.shape) == 2
-        assert len(d.shape) == 2
-        assert len(m.shape) == 2
-
-        # u_bin = torch.where(m == 2, x > u + self.deadband, torch.where(m == 1, x < u - self.deadband, torch.zeros_like(u)))
-        # u_bin = torch.zeros_like(x)
-        self.mode_lock = prev.clone()
-        # self.mode_lock = 0
-        # mode_list = []
-
-        for i in range(0, x.shape[0]):
-            
-            if m[i] == 2:
-
-                if (x[i,:] > u[i,:]) or (self.mode_lock[i,:]):
-                    # u_bin[i,:] = torch.ones_like(x[i,:])
-                    u_bin[i,:] += 0.25
-                    self.mode_lock[i,:] = torch.ones_like(x[i,:])
-                else:
-                    # u_bin[i,:] = torch.zeros_like(x[i,:])
-                    u_bin[i,:] -= 0.25
-
-                if (self.mode_lock[i,:]) and (x[i,:] < u[i,:] - self.deadband):
-                    self.mode_lock[i,:] = torch.zeros_like(x[i,:])
-
-        u_bin.clamp(min=0.0, max=1.0)
-
-            # elif m[i] == 1:
-            #     u_bin[i,:] = x[i,:] < u[i,:]
-
-            #     if self.count < self.lockout:
-            #         self.mode_lock = 1
-            #         self.count += 1
-            #     else:
-            #         self.mode_lock = 0
-            #         self.count = 0
-
-            # else:
-            #     u_bin[i,:] = [0]
-
-            # if self.debug:
-            #     print(f"{i}: {x[i,0]:.3f}, {u[i,0]:.3f}")
-            #     print(self.mode_lock)
-            #     input('')
-
-        # self.debug = True
-        # print(x.shape[0])
-        # print(self.fxRK4(x,u_bin,d).shape)
-        # print(u_bin.shape)
-        # print(torch.tensor(mode_list).shape)
-
-        return (self.fxRK4(x, u_bin, d), u_bin, self.mode_lock)
-    
 class BatteryModel(nn.Module):
-    def __init__(self, eff, capacity, nx, nu):
+    def __init__(self, eff, capacity, chargeRate, nx, nu, dt):
         super().__init__()
         self.nx = nx
         self.nu = nu
         self.in_features = nx+nu
         self.out_features = nx
-        self.dt = 60
+        self.dt = dt
 
         self.eff = eff
         self.capacity = capacity
+        self.chargeRate = chargeRate
 
-    def forward(self, x, u):
+    def forward(self, x, u, u_bat):
         assert len(x.shape) == 2
         assert len(u.shape) == 2
+        assert len(u_bat.shape) == 2
 
-        x = x + self.eff * u / self.dt
+        x = x + self.eff * u_bat / self.dt
         x = torch.clamp(x, self.capacity*0.2, self.capacity)
 
         return x
@@ -1443,32 +1024,6 @@ class BatteryModel(nn.Module):
         '''
         nodes = [Node(batModel, ['stored', 'u_bat'], ['stored'], name='batModel')]
         return System(nodes, nsteps=nsteps, drop_init_cond=True)
-
-    
-class batCorrect(nn.Module):
-    def __init__(self, capacity):
-        super().__init__()
-        self.capacity = capacity
-
-    def forward(self, stored, u_bat):
-        assert len(stored.shape) == 2
-        assert len(u_bat.shape) == 2
-
-        return torch.where((stored >= self.capacity) | (stored <= self.capacity*0.2), torch.zeros_like(u_bat), u_bat)
-
-        # if x.shape[0] == 1:
-        #     return torch.ones_like(x)
-        # else:   
-        #     return torch.gradient(x, dim=0)
-
-        # if x.shape[0] == 1:
-        #     deltaX = (x - self.xPrev) * 60 * 1/0.95
-        #     self.xPrev = x[-1].item()
-        # else:
-        #     deltaX = torch.zeros_like(x)
-        #     deltaX[1:] = (x[1:] - x[:-1]) * 60 * 1/0.95
-        #     self.xPrev = x[-1].item()
-        # return torch.clamp(deltaX, min=-9.6, max=9.6)
 
 # Custom debug and callback code
 class Callback_Basic(Callback):
@@ -1563,25 +1118,13 @@ class Callback_NODE(Callback):
 
         # Monitoring values by epoch
         self.savePath = savePath
-        self.ResetTrainValues()
-
-    def ResetTrainValues(self):
-        self.trainValues = {'train_u': [], 'train_y': [], 'train_yhat': []}
-
-    def end_batch(self, trainer, output):
-        if self.debugLevel < DebugLevel.EPOCH_VALUES:
-            return
-        
-        self.trainValues['train_u'].append(output['train_u'].detach().cpu().flatten().numpy())
-        self.trainValues['train_y'].append(output['train_y'].detach().cpu().flatten().numpy())
-        self.trainValues['train_yhat'].append(output['train_x'].detach().cpu().flatten().numpy())
 
     def begin_epoch(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_VALUES:
             return
-        train_u = np.array(self.trainValues['train_u'][:-1]).flatten()
-        train_y = np.array(self.trainValues['train_y'][:-1]).flatten()
-        train_yhat = np.array(self.trainValues['train_yhat'][:-1]).flatten()
+        train_u = np.array(output['train_u_hvac'].detach().cpu().reshape(-1,1))
+        train_y = np.array(output['train_y'].detach().cpu().reshape(-1,1))
+        train_yhat = np.array(output['train_x'].detach().cpu().reshape(-1,1))
         fig, ax = plt.subplots(2, figsize=(10,8))
         ax[0].plot(train_u)
         ax[0].set(ylim=[0,1.1], title='u', xlim=[0,2000])
@@ -1593,7 +1136,6 @@ class Callback_NODE(Callback):
         Path(f'{self.savePath}/debug').mkdir(exist_ok=True)
         fig.savefig(f"{self.savePath}/debug/epoch{output['train_epoch']}")
         plt.close(fig)
-        self.ResetTrainValues()
 
     def end_eval(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_LOSS:
@@ -1619,45 +1161,14 @@ class Callback_Controller(Callback):
 
         # Monitoring values by epoch
         self.savePath = savePath
-        self.ResetTrainValues()
-
-    def ResetTrainValues(self):
-        self.trainValues = {'train_u': [], 'train_y': [], 'train_ymin': [], 'train_ymax': [],
-                            'train_ubat': [], 'train_stored': [], 'train_batRef': [], 'train_batMax': []}
-        self.lossValues = {'bat_max': [], 'bat_max_value': [], 'bat_max_violation': []}
-
-    def end_batch(self, trainer, output):
-        if self.debugLevel < DebugLevel.EPOCH_VALUES:
-            return
-
-        # for key, value in output.items():
-        #     try:
-        #         print(key, value.shape)
-        #     except:
-        #         print(key)
-        # input('paused')
-
-        self.trainValues['train_u'].append(output['train_u'].detach().cpu().flatten().numpy())
-        self.trainValues['train_y'].append(output['train_y'][:,:-1,:].detach().cpu().flatten().numpy())
-        self.trainValues['train_ymin'].append(output['train_ymin'][:,:-1,:].detach().cpu().flatten().numpy())
-        self.trainValues['train_ymax'].append(output['train_ymax'][:,:-1,:].detach().cpu().flatten().numpy())
-
-        self.trainValues['train_ubat'].append(output['train_u_bat'][:,:,:].detach().cpu().flatten().numpy())
-        self.trainValues['train_stored'].append(output['train_stored'][:,:-1,:].detach().cpu().flatten().numpy())
-        self.trainValues['train_batRef'].append(output['train_batRef'][:,:-1,:].detach().cpu().flatten().numpy())
-        self.trainValues['train_batMax'].append(output['train_batMax'][:,:-1,:].detach().cpu().flatten().numpy())
-
-        # self.lossValues['bat_max'].append(output['train_stored_lt_batMax'].detach().cpu().flatten().numpy())
-        # self.lossValues['bat_max_value'].append(output['train_stored_lt_batMax_value'].detach().cpu().flatten().numpy())
-        # self.lossValues['bat_max_violation'].append(output['train_stored_lt_batMax_violation'].detach().cpu().flatten().numpy())
 
     def begin_epoch(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_VALUES:
             return
-        train_u = np.array(self.trainValues['train_u']).flatten()
-        train_y = np.array(self.trainValues['train_y']).flatten()
-        train_ymin = np.array(self.trainValues['train_ymin']).flatten()
-        train_ymax = np.array(self.trainValues['train_ymax']).flatten()
+        train_u = np.array(output['train_u_hvac'].detach().cpu().reshape(-1,1))
+        train_y = np.array(output['train_y'].detach().cpu().reshape(-1,1))
+        train_ymin = np.array(output['train_ymin'].detach().cpu().reshape(-1,1))
+        train_ymax = np.array(output['train_ymax'].detach().cpu().reshape(-1,1))
         fig, ax = plt.subplots(2, figsize=(10,8))
         ax[0].plot(train_u)
         ax[0].set(ylim=[0,1.1], title='u', xlim=[0,2000])
@@ -1671,10 +1182,10 @@ class Callback_Controller(Callback):
         fig.savefig(f"{self.savePath}/debug/HVAC/epoch{output['train_epoch']}")
         plt.close(fig)
 
-        train_ubat = np.array(self.trainValues['train_ubat']).flatten()
-        train_stored = np.array(self.trainValues['train_stored']).flatten()
-        train_batRef = np.array(self.trainValues['train_batRef']).flatten()
-        train_batMax = np.array(self.trainValues['train_batMax']).flatten()
+        train_ubat = np.array(output['train_u_bat'].detach().cpu().reshape(-1,1))
+        train_stored = np.array(output['train_stored'].detach().cpu().reshape(-1,1))
+        train_batRef = np.array(output['train_batRef'].detach().cpu().reshape(-1,1))
+        train_batMax = np.array(output['train_batMax'].detach().cpu().reshape(-1,1))
         fig, ax = plt.subplots(2, figsize=(10,8))
         ax[0].plot(train_ubat)
         ax[0].set(title='u', xlim=[0,2000])
@@ -1687,26 +1198,6 @@ class Callback_Controller(Callback):
         Path(f'{self.savePath}/debug/Battery').mkdir(exist_ok=True, parents=True)
         fig.savefig(f"{self.savePath}/debug/Battery/epoch{output['train_epoch']}")
         plt.close(fig)
-
-        # bat_max = np.array(self.lossValues['bat_max']).flatten()
-        # bat_max_value = np.array(self.lossValues['bat_max_value']).flatten()
-        # bat_max_violation = np.array(self.lossValues['bat_max_violation']).flatten()
-        # fig, ax = plt.subplots(3, figsize=(10,8))
-        # ax[0].plot(bat_max, label='bat_max')
-        # ax[0].legend()
-        # ax[1].plot(bat_max_value, label='bat_max_value')
-        # ax[1].set(xlim=[0,2000])
-        # ax[1].legend()
-        # ax[2].plot(bat_max_violation, label='bat_max_violation')
-        # ax[2].set(xlim=[0,2000])
-        # ax[2].legend()
-        # plt.figtext(0.01, 0.01, f"Epoch: {output['train_epoch']}", fontsize=14)
-        # plt.tight_layout()
-        # Path(f'{self.savePath}/debug/Loss').mkdir(exist_ok=True, parents=True)
-        # fig.savefig(f"{self.savePath}/debug/Loss/epoch{output['train_epoch']}")
-        # plt.close(fig)
-
-        self.ResetTrainValues()
 
     def end_eval(self, trainer, output):
         if self.debugLevel < DebugLevel.EPOCH_LOSS:

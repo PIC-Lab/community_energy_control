@@ -1,0 +1,27 @@
+{
+    "seed_file": "15.osm",
+    "weather_file": "USA_CO_Leadville-Lake.County.AP.724673_TMY3.epw",
+    "measure_paths": [
+        "./measures"
+    ],
+    "run_directory": "./run/",
+    "file_paths": [
+        "./weather/",
+        "./models/",
+        "./resources"
+    ],
+    "steps": [
+        {
+            "measure_dir_name": "example_model_measure",
+            "name": "Example Model Measure",
+            "description": "An Example Measure to act as a starting point for a tutorial",
+            "modeler_description": "An Example Measure to act as a starting point for a tutorial"
+        },
+        {
+            "measure_dir_name": "example_ep_measure",
+            "name": "Example EnergyPlus Measure",
+            "description": "An Example Measure to act as a starting point for a tutorial",
+            "modeler_description": "An Example Measure to act as a starting point for a tutorial"
+        }
+    ]
+}

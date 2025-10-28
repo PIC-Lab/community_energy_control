@@ -7,21 +7,34 @@ import logging
 from alfalfa_client.alfalfa_client import AlfalfaClient
 from pathlib import Path
 import numpy as np
-
-# from eventParser import ParseControlEvent
+import multiprocessing_logging
+from shutil import copy
 
 initTime = dt.datetime.now()
 
 with open('simParams.json') as fp:
     simParams = json.load(fp)
 
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S')
+
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
+# logger.addHandler(logging.StreamHandler())
 logger.setLevel(simParams['logLevel'])
+multiprocessing_logging.install_mp_handler(logger)
 
 logger.info('----- Alfalfa Federate Logs -----')
 logger.info(f"Start at {initTime}")
 logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
+
+MainDir = os.path.abspath(os.path.dirname(__file__))
+ModelDir = os.path.join(MainDir, 'network_model')
+BuildingDir = os.path.join(MainDir, 'building_models/cc_10zcm')
+ResultsDir = os.path.join(MainDir, simParams['resultsDir'])
+os.makedirs(ResultsDir, exist_ok=True)
+
+copy('simParams.json', simParams['resultsDir'])
 
 # ----- HELICS federate setup -----
 # Register federate from json
@@ -68,8 +81,8 @@ logger.info(f"Run period: {start_warmup} to {end_time}")
 ac = AlfalfaClient(host='http://localhost')
 
 # Define paths to models to by uploaded
-# model_paths = list(Path('./building_models').iterdir())
-model_paths = [Path('./building_models/4')]
+model_paths = list(Path(BuildingDir).iterdir())
+# model_paths = [Path('./building_models/4')]
 
 # Upload sites to alfalfa
 site_ids = ac.submit(model_paths)
@@ -91,9 +104,11 @@ params = {
 }
 
 # Start simulations
-for site in site_ids:
-    logger.debug(f"Starting site: {site}")
-    ac.start(site, **params)
+# for site in site_ids:
+#     logger.debug(f"Starting site: {site}")
+#     ac.start(site, **params)
+
+ac.start(site_ids, **params)
 
 # Run warmup
 logger.debug("Running warmup period")
@@ -152,13 +167,14 @@ try:
             alf_outs['Time'] = ac.get_sim_time(site)
 
             # Parse control events
-            for controlSet in controlEvents:
-                location = controlSet['location']
-                input_dicts[location] = {}
-                for key, value in controlSet['devices'].items():
-                    if 'Battery' in key:
-                        continue
-                    input_dicts[location][key] = value
+            if not(simParams['testCase'] == 'base'):
+                for controlSet in controlEvents:
+                    location = controlSet['location']
+                    input_dicts[location] = {}
+                    for key, value in controlSet['devices'].items():
+                        if 'Battery' in key:
+                            continue
+                        input_dicts[location][key] = value
 
             # Push updates to inputs to alfalfa
             ac.set_inputs(site, input_dicts[alias])
@@ -203,11 +219,11 @@ for key, building in outputs.items():
 # Save data to csv
 aggregateLoad = np.zeros(len(outputs_df[0]))
 for i, building in enumerate(outputs_df):
-    building.to_csv('results/'+aliases[i]+'_out.csv', index=False)
+    building.to_csv(ResultsDir+aliases[i]+'_out.csv', index=False)
     aggregateLoad += building['Whole Building Electricity'].values
 
 aggregate_df = pd.DataFrame(aggregateLoad)
-aggregate_df.to_csv('results/aggregate_out.csv', index=False)
+aggregate_df.to_csv(ResultsDir+'aggregate_out.csv', index=False)
 
 # finalize and close the federate
 h.helicsFederateDestroy(fed)

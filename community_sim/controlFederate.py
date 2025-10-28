@@ -22,6 +22,12 @@ logger.info("----- Control Federate Logs -----")
 logger.info(f"Started at {initTime}")
 logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
 
+MainDir = os.path.abspath(os.path.dirname(__file__))
+ModelDir = os.path.join(MainDir, 'network_model')
+BuildingDir = os.path.join(MainDir, 'building_models/cc_10zcm')
+ResultsDir = os.path.join(MainDir, simParams['resultsDir'])
+os.makedirs(ResultsDir, exist_ok=True)
+
 with open('indexMapping.json') as fp:
     sensorIdxMapping = json.load(fp)        # Map sensor indices to simulation indices
 simIdxMapping = {v: k for k, v in sensorIdxMapping.items()}     # Map simulation indices to sensor indices
@@ -95,7 +101,7 @@ try:
         if isupdated == 1:
             batterySOC = h.helicsInputGetString(subid['battery_soc'])
             batterySOC = json.loads(batterySOC)
-            logger.debug("Recieved updated value for battery_soc")
+            logger.debug("Received updated value for battery_soc")
             logger.debug(batterySOC)
         else:
             batterySOC = {}
@@ -104,7 +110,7 @@ try:
         if isupdated == 1:
             indoorTemp = h.helicsInputGetString(subid['indoor_temp'])
             indoorTemp = json.loads(indoorTemp)
-            logger.debug("Recieved updated value for indoor_temp")
+            logger.debug("Received updated value for indoor_temp")
             logger.debug(indoorTemp)
         else:
             indoorTemp = {}
@@ -141,23 +147,21 @@ try:
 
             controlTraj = {}
             controlTraj['Time'] = current_time
-            controlTraj['Control Effort'] = controller.trajectoryList[alias]['horizon_u'][0,0,0].detach().item()
+            controlTraj['Control Effort'] = controller.trajectoryList[alias]['horizon_u_hvac'][0,0,0].detach().item()
             controlTraj['Predicted Temperature'] = controller.trajectoryList[alias]['horizon_y'][0,0,0].detach().item()
             controlTraj['Ymax'] = controller.trajectoryList[alias]['horizon_ymax'][0,0,0].detach().item()
             controlTraj['Ymin'] = controller.trajectoryList[alias]['horizon_ymin'][0,0,0].detach().item()
-            controlTraj['dr'] = controller.trajectoryList[alias]['horizon_dr'][0,0,0].detach().item()
+            controlTraj['powerRef'] = controller.trajectoryList[alias]['horizon_powerRef'][0,0,0].detach().item()
             controlTraj['cost'] = controller.trajectoryList[alias]['horizon_cost'][0,0,0].detach().item()
             controlTraj['stored'] = controller.trajectoryList[alias]['horizon_stored'][0,0,0].detach().item()
             controlTraj['u_bat'] = controller.trajectoryList[alias]['horizon_u_bat'][0,0,0].detach().item()
             controlTraj['bat_ref'] = controller.trajectoryList[alias]['horizon_batRef'][0,0,0].detach().item()
-            controlTraj['hvacPower'] = controller.trajectoryList[alias]['horizon_hvacPower'][0,0,0].detach().item()
-            controlTraj['batPower'] = controller.trajectoryList[alias]['horizon_batPower'][0,0,0].detach().item()
             outputs[alias].append(controlTraj)
 
             coordDict = {}
             coordDict['Time'] = current_time
-            coordDict['usagePenalty'] = controller.coordDebug[alias]['usagePenalty']
-            coordDict['flexLoad'] = controller.coordDebug[alias]['flexLoad']
+            coordDict['usagePenalty'] = controller.coordDebug[alias]['usagePenalty'][0]
+            coordDict['flexLoad'] = controller.coordDebug[alias]['flexLoad'][0]
             coord_out[alias].append(coordDict)
 
         logger.debug("Publishing values to other federates")
@@ -186,9 +190,9 @@ for key, building in coord_out.items():
 # Save data to csv
 aggregateLoad = np.zeros(len(outputs_df[0]))
 for i, building in enumerate(outputs_df):
-    building.to_csv('results/'+simParams['controlledAliases'][i]+'_control.csv', index=False)
+    building.to_csv(ResultsDir+simParams['controlledAliases'][i]+'_control.csv', index=False)
 for i, building in enumerate(coord_df):
-    building.to_csv('results/'+simParams['controlledAliases'][i]+'_coord.csv', index=False)
+    building.to_csv(ResultsDir+simParams['controlledAliases'][i]+'_coord.csv', index=False)
 
 # finalize and close the federate
 h.helicsFederateDestroy(fed)

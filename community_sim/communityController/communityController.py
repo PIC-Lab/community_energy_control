@@ -10,7 +10,7 @@ from communityController.flexibility_metrics.flexibilityMetrics import Flexibili
 class CommunityController:
     '''
     '''
-    def __init__(self, controlAliasList, runName):
+    def __init__(self, controlAliasList, runName, testCase='MPC'):
         '''
         '''
         self.controlAliasList = controlAliasList
@@ -26,17 +26,17 @@ class CommunityController:
 
         self.dirName = os.path.dirname(__file__)
 
-        self.ControllerInit(runName)
-        self.CoordinatorInit()
-        self.FlexibilityInit()
+        self.ControllerInit(runName, testCase)
+        self.CoordinatorInit(runName)
+        self.FlexibilityInit(runName)
 
-    def CoordinatorInit(self):
+    def CoordinatorInit(self, runName):
         '''
         '''
-        self.coordinator = Coordinator(len(self.controlAliasList), self.nsteps)
+        self.coordinator = Coordinator(len(self.controlAliasList), self.nsteps, 1)
         self.coordinator.AdjustInit()
 
-    def ControllerInit(self, runName):
+    def ControllerInit(self, runName, testCase):
         '''
         '''
         # if self.mode == 'deploy':
@@ -53,13 +53,13 @@ class CommunityController:
                 if building['house_id'] == alias:
                     devices = building['devices']
                     break
-            self.controllerList.append(BuildingController(alias, devices, runName))
+            self.controllerList.append(BuildingController(alias, devices, runName, testCase=testCase))
 
-    def FlexibilityInit(self):
+    def FlexibilityInit(self, runName):
         '''
         '''
         for alias in self.controlAliasList:
-            self.flexibilityList.append(FlexibilityMetricPredictor())
+            self.flexibilityList.append(FlexibilityMetricPredictor(alias, runName))
 
     def Step(self, sensorValues, currentTime):
         '''
@@ -73,7 +73,7 @@ class CommunityController:
         self.coordinator.predictedFlexibility = self.predictedFlex
         self.coordinator.baseLoad = np.ones((2, self.coordinator.nsteps)) * 10
         self.coordinator.Step()
-        coordinateSignals = self.coordinator.adjustValues['flexLoad']
+        coordinateSignals = self.predictedLoad - self.coordinator.adjustValues['flexLoad']
 
         # Update controllers
         controlEvents = []
@@ -83,7 +83,7 @@ class CommunityController:
             self.coordDebug[alias] = {}
             self.coordDebug[alias]['usagePenalty'] = self.coordinator.usagePenalty[i]
             self.coordDebug[alias]['flexLoad'] = self.coordinator.adjustValues['flexLoad'][i,:]
-            self.predictedLoad[i,:] += trajectories['horizon_u'].detach().numpy()[0,:,0]
+            self.predictedLoad[i,:] += trajectories['horizon_u_hvac'].detach().numpy()[0,:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
         
         return controlEvents

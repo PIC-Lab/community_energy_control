@@ -3,7 +3,7 @@ import numpy as np
 import os
 import datetime as dt
 
-from communityController.buildingController.thermal_node_model.modelConstructor_projGrad import BuildingNode, ControllerSystem, ModeClassifier, Normalizer
+from communityController.buildingController.thermal_node_model.modelConstructor import BuildingNode, ControllerSystem, Normalizer
 from communityController.buildingController.thermal_node_model.runManager import RunManager
 
 import torch
@@ -21,7 +21,7 @@ class BuildingController:
         pv: (ndarray[float]) predicted PV generation
         dist: (ndarray[float]) predicted disturbances (outdoor temperature)
     """
-    def __init__(self, id, devices, runName, train=False):
+    def __init__(self, id, devices, runName, train=False, testCase='MPC'):
         """
         Constructor
         Parameters:
@@ -33,8 +33,9 @@ class BuildingController:
         self.buildingID = id
         self.devices = devices
         self.runName = runName
+        self.testCase = testCase
 
-        self.controlEvents = []
+        self.controlEvents = {}
 
         self.dirName = os.path.dirname(__file__)
 
@@ -82,18 +83,16 @@ class BuildingController:
         pos = self.weather.index.get_loc(currentTime)
         d = self.weather['Site Outdoor Air Temperature'].iloc[pos:pos+self.nsteps].to_numpy()[np.newaxis,:,np.newaxis]
         dr = coordinateSignals[np.newaxis,:,np.newaxis]
-        self.horizonData = {'xn': torch.tensor(self.stateData, dtype=torch.float32),
+        self.horizonData = {'yn': torch.tensor(self.stateData, dtype=torch.float32),
                             'y': torch.tensor(np.array([y])[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'ymin': torch.tensor(ymin, dtype=torch.float32),
                             'ymax': torch.tensor(ymax, dtype=torch.float32),
                             'd': torch.tensor(d, dtype=torch.float32),
-                            'dr': torch.tensor(dr, dtype=torch.float32),
+                            'powerRef': torch.tensor(dr, dtype=torch.float32),
                             'cost': torch.tensor(BuildingController.TOUPricing(currentTime, self.nsteps)[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'stored': torch.tensor(np.array([self.sensorValues['batterySOC']])[np.newaxis,:,np.newaxis], dtype=torch.float32),
                             'batRef': torch.tensor(self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')[np.newaxis,:], dtype=torch.float32),
                             'batMax': torch.tensor(np.ones((1,self.nsteps+1,1))*8.0, dtype=torch.float32),
-                            'hvacPower': torch.zeros(self.stateData.shape),
-                            'batPower': torch.zeros(self.stateData.shape),
                             'name': 'horizon'}
         
         self.horizonData = self.norm.norm(self.horizonData, keys=['y', 'y', 'y', 'y', 'd', 'leave', 'p', 'leave', 'leave', 'leave'])
@@ -120,7 +119,8 @@ class BuildingController:
         trajectories = self.PredictiveControl()
 
         # Push control signals to actuators
-        self.PushControlSignals()
+        if not(self.testCase == 'base'):
+            self.PushControlSignals()
         return trajectories
 
     # Control functions
@@ -147,7 +147,7 @@ class BuildingController:
 
         self.actuatorValues['battery'] = trajectories['horizon_u_bat'][0,0,0].detach().item()
 
-        control = trajectories['horizon_u'][0,0,0].detach()
+        control = trajectories['horizon_u_hvac'][0,0,0].detach()
 
         if self.HVAC_lock:
             self.count += 1
@@ -171,15 +171,15 @@ class BuildingController:
                 self.actuatorValues['coolingSetpoint'] = 100
             case 1:
                 self.actuatorValues['heatingSetpoint'] = 0
-                self.actuatorValues['coolingSetpoint'] = 10
+                self.actuatorValues['coolingSetpoint'] = 18
             case 2:
                 self.actuatorValues['heatingSetpoint'] = 0
-                self.actuatorValues['coolingSetpoint'] = 10
+                self.actuatorValues['coolingSetpoint'] = 18
             case 3:
-                self.actuatorValues['heatingSetpoint'] = 90
+                self.actuatorValues['heatingSetpoint'] = 30
                 self.actuatorValues['coolingSetpoint'] = 100
             case 4:
-                self.actuatorValues['heatingSetpoint'] = 90
+                self.actuatorValues['heatingSetpoint'] = 30
                 self.actuatorValues['coolingSetpoint'] = 100
         return trajectories
 
@@ -202,12 +202,10 @@ class BuildingController:
         for key in manager.models.keys():
             if key.find('buildingThermal') != -1:
                 thermalModelName = key
-            elif key.find('classifier') != -1:
-                classifierModelName = key
             elif key.find('controller') != -1:
                 controllerModelName = key
             else:
-                raise ValueError(f"Model name '{key}' does not meet expected naming conventions.")
+                print(f"Model name '{key}' does not meet expected naming conventions. Key will be ignored.")
             
         self.nsteps = manager.models[controllerModelName]['train_params']['nsteps']
 
@@ -218,6 +216,7 @@ class BuildingController:
                                        nu=initParams['nu'],
                                        nd=initParams['nd'],
                                        manager=manager,
+                                       norm=self.norm,
                                        name=thermalModelName,
                                        device=device,
                                        debugLevel = 0,
@@ -227,19 +226,6 @@ class BuildingController:
         buildingThermal.TrainModel(dataset=None, load=True, test=False)
 
         self.stateData = np.zeros((1,1,initParams['nx']))
-
-        # Classifier model definition
-        initParams = manager.models[classifierModelName]['init_params']
-        classifier = ModeClassifier(nm=initParams['nm'],
-                                    nu=initParams['nu'],
-                                    manager=manager,
-                                    name=classifierModelName,
-                                    device=device,
-                                    debugLevel = 0,
-                                    saveDir=f"{manager.runPath+classifierModelName}")
-        classifier.CreateModel()
-
-        classifier.TrainModel(dataset=None, load=True, test=False)
 
         # Controller model definition
         initParams = manager.models[controllerModelName]['init_params']
@@ -254,8 +240,7 @@ class BuildingController:
                                          manager=manager,
                                          name=controllerModelName,
                                          norm=self.norm,
-                                         thermalModel=buildingThermal.model,
-                                         classifier=classifier.model,
+                                         thermalModel=buildingThermal.problem,
                                          device=device,
                                          debugLevel=0,
                                          saveDir=f"{manager.runPath+controllerModelName}/{self.buildingID}")

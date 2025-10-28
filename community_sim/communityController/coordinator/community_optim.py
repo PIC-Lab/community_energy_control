@@ -9,7 +9,7 @@ class Coordinator():
     Class for the community coordinator
     '''
 
-    def __init__(self, numBuildings, nsteps):
+    def __init__(self, numBuildings, nsteps, stepFreq):
         '''
         Constructor
         '''
@@ -19,6 +19,7 @@ class Coordinator():
 
         self.numBuildings = numBuildings
         self.nsteps = nsteps
+        self.stepFrequency = stepFreq
 
         self.predictedLoad = np.zeros((self.numBuildings, self.nsteps))
         self.predictedFlexibility = np.zeros((self.numBuildings, self.nsteps))
@@ -31,7 +32,8 @@ class Coordinator():
         self.predictedTransLoad = np.zeros((len(self.transInfo.keys()), self.nsteps))
 
         self.assessProb = AssessOptimization()
-        self.adjustProb = AdjustOptimization(self.numBuildings, self.nsteps)
+        transLim = [v['rating'] for k,v in self.transInfo.items()]
+        self.adjustProb = AdjustOptimization(self.numBuildings, self.nsteps, transLim)
 
     def AdjustInit(self, verbose=False):
         '''
@@ -42,9 +44,12 @@ class Coordinator():
         '''
         paramDict = {}
         paramDict['usagePenalty'] = np.zeros((self.numBuildings))
-        paramDict['dr_reduce'] = np.zeros((self.nsteps))
+        paramDict['dr_ref'] = np.zeros((self.nsteps))
         paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
         paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 15
+        paramDict['trans_ref'] = np.ones((len(self.transInfo.keys()), self.nsteps))
+        paramDict['predLoad'] = np.ones_like(self.predictedLoad)
+        paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
         self.adjustProb.SolveProblem(paramDict, verbose=verbose)
     
     def TransformerOverload(self):
@@ -91,9 +96,18 @@ class Coordinator():
         '''
         paramDict = {}
         paramDict['usagePenalty'] = self.usagePenalty
-        paramDict['dr_reduce'] = -1 * (np.sum(self.overloadList[0], axis=0) + np.sum(self.overloadList[1], axis=0))
+        # paramDict['dr_ref'] = -1 * (np.sum(self.overloadList[0], axis=0) + np.sum(self.overloadList[1], axis=0))
+        paramDict['dr_ref'] = np.ones(self.nsteps) * 100
+        temp = np.ones((len(self.transInfo.keys()), self.nsteps))
+        i = 0
+        for key, value in self.transInfo.items():
+            temp[i,:] *= value['rating']
+            i += 1
+        paramDict['trans_ref'] = temp
         paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
         paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 100
+        paramDict['predLoad'] = self.predictedLoad
+        paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
         self.adjustProb.SolveProblem(paramDict, verbose=verbose)
         adjustValues = self.adjustProb.GetValues()
         return adjustValues
@@ -150,7 +164,7 @@ class AdjustOptimization(ConvexProblem):
     Optimization problem for the adjust phase
     '''
 
-    def __init__(self, numBuildings, nsteps):
+    def __init__(self, numBuildings, nsteps, transLimits):
         '''
         Constructor
         '''
@@ -158,6 +172,7 @@ class AdjustOptimization(ConvexProblem):
 
         self.numBuildings = numBuildings
         self.n = nsteps
+        self.transLimits = transLimits
 
         self.DefineProblem()
 
@@ -165,13 +180,15 @@ class AdjustOptimization(ConvexProblem):
         '''
         Define the optimization problem used in the adjust phase to choose which buildings will utilize their flexibility
         '''
+        trans_map = np.ones((2,self.numBuildings))
+
         flexLoad = cp.Variable((self.numBuildings, self.n), name='flexLoad')
 
-        # flexUsage = cp.Parameter((numBuildings,n), name='flexUsage')
-        # usageTime = cp.Parameter((numBuildings,n), name='usageTime')
-        # price = cp.Parameter(n, name='price')
         usagePenalty = cp.Parameter(self.numBuildings, name='usagePenalty')
-        dr_reduce = cp.Parameter(self.n, name='dr_reduce')
+        dr_ref = cp.Parameter(self.n, name='dr_ref')
+        trans_ref = cp.Parameter((len(self.transLimits), self.n), name='trans_ref')
+        predLoad = cp.Parameter((self.numBuildings, self.n), name='predLoad')
+        baseLoad = cp.Parameter((len(self.transLimits), self.n), name='baseLoad')
         W1 = 2
         W2 = 1
 
@@ -180,9 +197,11 @@ class AdjustOptimization(ConvexProblem):
 
         objective = cp.Minimize(W1*usagePenalty@flexLoad@np.ones(self.n)+W2*cp.max(flexLoad, axis=0)@np.ones(self.n))
         constraints = []
-        constraints.append(flexLoad <= flexMax)
-        constraints.append(flexLoad >= flexMin)
-        constraints.append(cp.sum(flexLoad, axis=0) >= dr_reduce)
+        constraints.append(flexLoad + predLoad <= flexMax)
+        constraints.append(flexLoad + predLoad >= flexMin)
+        constraints.append(cp.sum(flexLoad+predLoad, axis=0)+cp.sum(baseLoad, axis=0) <= dr_ref)
+        for i in range(0, len(self.transLimits)):
+            constraints.append(trans_map[i,:]@flexLoad+baseLoad[i,:] <= trans_ref[i,:])
 
         self.prob = cp.Problem(objective, constraints)
 

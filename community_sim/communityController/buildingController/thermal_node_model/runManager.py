@@ -58,12 +58,13 @@ class RunManager():
         '''
         # Check if previous run needs to be moved
         if os.path.isdir(self.runPath):
-            userInput = input("Would you like to save the most recent run? (y/n) ")
+            existingName = self.runPath.split(self.saveDir)[1][1:-1]
+            userInput = input(f"Would you like to save the previous run currently using '{existingName}'? (y/n) ")
             if userInput.lower() == 'y':
                 RunManager.SavePreviousRun(self.saveDir)
             else:
                 shutil.rmtree(self.runPath)
-        
+
         os.mkdir(self.runPath)
 
     def LoadRunJson(self, runName='latestRun'):

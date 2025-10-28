@@ -179,35 +179,6 @@ def Main():
 
     buildings = ['4']
 
-    # ------------ Train classifier ------------
-    tempList = []
-    while len(tempList) < manager.dataset['slice_idx'][1]:
-        value = np.random.uniform(0, 1)
-        duration = np.random.randint(1,30)
-        tempList.extend([value] * duration)
-
-    tempList = tempList[:manager.dataset['slice_idx'][1]]
-
-    classifierData = {}
-    classifierData['U'] = np.array(tempList)[:,np.newaxis]
-    classifierData['M'] = classifierData['U'] > 0.5
-    
-    classifier = ModeClassifier(nm=classifierData['M'].shape[1],
-                                    nu=classifierData['U'].shape[1],
-                                    manager=manager,
-                                    name=classifierModelName,
-                                    device=device,
-                                    debugLevel = DebugLevel.EPOCH_LOSS,
-                                    saveDir=f"{manager.runPath+classifierModelName}")
-    classifier.CreateModel()
-
-    classifier.TrainModel(classifierData, loadClass)
-
-    classifier.TestModel()
-
-    manager.models["classifier"]["init_params"] = {'nm': classifier.nm, 'nu': classifier.nu}
-    # ------------------------------------------
-
     tol = 1e-6              # Tolerance when determining if training loss improved at all
     bestLoss = 1e5          # Best achieved loss over multiple training attempts
     maxIterations = 1       # Maximum attempts allowed for finding the best training loss
@@ -263,7 +234,7 @@ def Main():
 
         # ---------- Train thermal model -----------
         if (attempts == 0) and (count == 0):
-            buildingThermal = ExperimentalThermalModel(nx=dataset['X'].shape[1],
+            buildingThermal = BuildingNode(nx=dataset['X'].shape[1],
                                     nu=dataset['U'].shape[1],
                                     nd=dataset['D'].shape[1],
                                     manager=manager,
@@ -279,7 +250,7 @@ def Main():
             
             manager.models["buildingThermal"]["init_params"] = {'nx': buildingThermal.nx, 'nu': buildingThermal.nu, 'nd': buildingThermal.nd}
         # ------------------------------------------
-        break
+
         # ------------ Train controller ------------
         controlSystem = ControllerSystem(nx=dataset['X'].shape[1],
                                         nu=dataset['U'].shape[1],

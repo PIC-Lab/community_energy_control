@@ -22,7 +22,7 @@ logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
 # Folder and File locations
 MainDir = os.path.abspath(os.path.dirname(__file__))
 ModelDir = os.path.join(MainDir, 'network_model')
-ResultsDir = os.path.join(MainDir, 'results')
+ResultsDir = os.path.join(MainDir, simParams['resultsDir'])
 os.makedirs(ResultsDir, exist_ok=True)
 
 # Output files
@@ -140,7 +140,7 @@ try:
                 location = controlSet['location']
                 for key, value in controlSet['devices'].items():
                     if 'Battery' in key:
-                        dss.set_power(key+location, element='Storage', p=value)
+                        dss.set_power(key+location, element='Storage', p=value/2)
                     else:
                         continue
 
