@@ -182,3 +182,5 @@ deploy/
 # Pickle files
 *.pickle
 
+testing*
+

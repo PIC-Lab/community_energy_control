@@ -13,6 +13,8 @@ class CommunityController:
     def __init__(self, controlAliasList, runName, testCase='MPC'):
         '''
         '''
+        dirName = os.path.dirname(__file__)
+
         self.controlAliasList = controlAliasList
         self.nsteps = 60
 
@@ -24,9 +26,7 @@ class CommunityController:
         self.predictedLoad = np.zeros((len(controlAliasList), self.nsteps))
         self.predictedFlex = np.zeros((len(controlAliasList), self.nsteps))
 
-        self.dirName = os.path.dirname(__file__)
-
-        self.ControllerInit(runName, testCase)
+        self.ControllerInit(runName, testCase, dirName)
         self.CoordinatorInit(runName)
         self.FlexibilityInit(runName)
 
@@ -36,7 +36,7 @@ class CommunityController:
         self.coordinator = Coordinator(len(self.controlAliasList), self.nsteps, 1)
         self.coordinator.AdjustInit()
 
-    def ControllerInit(self, runName, testCase):
+    def ControllerInit(self, runName, testCase, dirName):
         '''
         '''
         # if self.mode == 'deploy':
@@ -44,7 +44,7 @@ class CommunityController:
         
         # Get all devices from a building using API
         # Using json file for now
-        with open(os.path.join(self.dirName, '../buildingDeviceList.json')) as fp:
+        with open(os.path.join(dirName, '../configs/buildingDeviceList.json')) as fp:
             buildingDevices = json.load(fp)
                 
         # Create controller object
@@ -83,6 +83,10 @@ class CommunityController:
             self.coordDebug[alias] = {}
             self.coordDebug[alias]['usagePenalty'] = self.coordinator.usagePenalty[i]
             self.coordDebug[alias]['flexLoad'] = self.coordinator.adjustValues['flexLoad'][i,:]
+            # self.coordDebug[alias]['trans_ref'] = self.coordinator.adjustValues['trans_ref']
+            # self.coordDebug[alias]['predLoad']
+            # self.coordDebug[alias]['baseLoad']
+            # self.coordDebug[alias]['pow_ref']
             self.predictedLoad[i,:] += trajectories['horizon_u_hvac'].detach().numpy()[0,:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
         

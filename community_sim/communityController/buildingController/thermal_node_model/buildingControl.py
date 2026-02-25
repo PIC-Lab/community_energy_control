@@ -116,8 +116,8 @@ def Main():
         controllerModelName = "controller"
         manager.models[controllerModelName] = {
             'weights': {'cost_loss': 2.0, 'delta_loss': 2.0,
-                        'follow_limit': 25.0, 'coordRef': 15.0,
-                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 25.0, 'bat_max': 10.0},
+                        'follow_limit': 15.0, 'coordRef': 15.0,
+                        'x_min': 20.0, 'x_max': 20.0, 'bat_min': 15.0, 'bat_max': 10.0},
             # 'hsizes': [32,32],
             # 'hsizes': [64,64],
             'hsizes': [200,200],
@@ -167,7 +167,7 @@ def Main():
         manager.WriteRunJson()
 
     # Get building ids
-    with open('../../../simParams.json') as fp:
+    with open('../../../configs/simParams.json') as fp:
         simParams = json.load(fp)
     buildingModels = Path('../../../building_models/')
     buildings = []
@@ -177,7 +177,7 @@ def Main():
 
     tol = 1e-6              # Tolerance when determining if training loss improved at all
     bestLoss = 1e5          # Best achieved loss over multiple training attempts
-    maxIterations = 1       # Maximum attempts allowed for finding the best training loss
+    maxIterations = 2       # Maximum attempts allowed for finding the best training loss
 
     count = 1 
     attempts = 0
@@ -314,7 +314,7 @@ def Main():
             shutil.copytree(f"{controlSystem.saveDir}/best", controlSystem.saveDir, dirs_exist_ok=True)
             shutil.rmtree(f"{controlSystem.saveDir}/best")
             i += 1
-            count = 0
+            count = 1
             bestLoss = 1e5
             attempts = 0
 

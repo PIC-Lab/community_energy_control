@@ -36,7 +36,7 @@ class ExampleModelMeasure < OpenStudio::Measure::ModelMeasure
 
     # Change temperature capacity multiplier
     zoneCap = model.getZoneCapacitanceMultiplierResearchSpecial
-    zoneCap.setTemperatureCapacityMultiplier(3)
+    zoneCap.setTemperatureCapacityMultiplier(10)
 
     # Set thermostat deadband
     thermostats = model.getThermostats

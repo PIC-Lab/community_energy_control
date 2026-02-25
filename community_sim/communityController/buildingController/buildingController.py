@@ -28,6 +28,8 @@ class BuildingController:
             id: (str) id of the controller's building
             testCase: (str) name of test case being run, defaults to MPC
         """
+        dirName = os.path.dirname(__file__)
+
         self.actuatorValues = {'heatingSetpoint': 18, 'coolingSetpoint': 24, 'battery': 0}
         self.sensorValues = {'indoorAirTemp': 21, 'batterySOC': 8.2}
         self.buildingID = id
@@ -36,8 +38,6 @@ class BuildingController:
         self.testCase = testCase
 
         self.controlEvents = {}
-
-        self.dirName = os.path.dirname(__file__)
 
         # HVAC Values
         self.HVAC_mode = 0
@@ -48,19 +48,19 @@ class BuildingController:
         # Load building specific parameters
         self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 0.5}      # Default value, should be commented out
         # Temporary, needs to be fixed later
-        self.setpointSchedule = pd.read_csv(os.path.join(self.dirName, '../../setpointSchedule.csv')
+        self.setpointSchedule = pd.read_csv(os.path.join(dirName, '../../setpointSchedule.csv')
                                             , header=None).to_numpy()[np.newaxis, :]
         # self.weather = pd.read_csv(os.path.join(self.dirName, '../../results/summer/1_out.csv')
         #                            , usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
-        self.weather = pd.read_csv(os.path.join(self.dirName, '../../results/2024_weather.csv')
+        self.weather = pd.read_csv(os.path.join(dirName, '../../results/2024_weather.csv')
                                    , usecols=['Time', 'Site Outdoor Air Temperature'])      # Time column needs to be a timestamp
         self.weather.set_index(pd.to_datetime(self.weather['Time'], format="%Y-%m-%d %H:%M:%S"), inplace=True)
         self.weather.drop('Time', axis=1, inplace=True)
-        self.socSchedule = pd.read_csv(os.path.join(self.dirName, 'thermal_node_model/socSchedule.csv')).to_numpy() * 16.4
+        self.socSchedule = pd.read_csv(os.path.join(dirName, 'thermal_node_model/socSchedule.csv')).to_numpy() * 16.4
 
         # Run additional setup functions
         if not(train):
-            self.LoadMPC()
+            self.LoadMPC(dirName)
         self.count = 0
         self.HVAC_lock = 0
         self.HVAC_prevMode = 0
@@ -95,7 +95,9 @@ class BuildingController:
                             'batMax': torch.tensor(np.ones((1,self.nsteps+1,1))*8.0, dtype=torch.float32),
                             'name': 'horizon'}
         
-        self.horizonData = self.norm.norm(self.horizonData, keys=['y', 'y', 'y', 'y', 'd', 'leave', 'p', 'leave', 'leave', 'leave'])
+        normDict = {'yn': 'y', 'y': 'y', 'ymin': 'y', 'ymax': 'y', 'd': 'd', 'cost': 'p'}
+
+        self.horizonData = self.norm.norm(self.horizonData, keys=normDict)
 
     def PushControlSignals(self):
         """
@@ -171,20 +173,23 @@ class BuildingController:
                 self.actuatorValues['coolingSetpoint'] = 100
             case 1:
                 self.actuatorValues['heatingSetpoint'] = 0
-                self.actuatorValues['coolingSetpoint'] = 18
+                self.actuatorValues['coolingSetpoint'] = 16
             case 2:
                 self.actuatorValues['heatingSetpoint'] = 0
-                self.actuatorValues['coolingSetpoint'] = 18
+                self.actuatorValues['coolingSetpoint'] = 16
             case 3:
                 self.actuatorValues['heatingSetpoint'] = 30
                 self.actuatorValues['coolingSetpoint'] = 100
             case 4:
                 self.actuatorValues['heatingSetpoint'] = 30
                 self.actuatorValues['coolingSetpoint'] = 100
-        return trajectories
+
+        normDict = {'horizon_y': 'y', 'horizon_ymin': 'y', 'horizon_ymax': 'y', 'horizon_d': 'd', 'horizon_cost': 'p'}
+        
+        return self.norm.denorm(trajectories, keys=normDict)
 
     # Control setup functions
-    def LoadMPC(self):
+    def LoadMPC(self, dirName):
         '''
         Creates a controller object from the modelConstructor module and loads the saved weights
         '''
@@ -192,7 +197,7 @@ class BuildingController:
         device = torch.device("cpu")
 
         # Path relative to the directory the sim is being run in. Needs to be fixed
-        filePath = os.path.join(self.dirName, 'thermal_node_model')
+        filePath = os.path.join(dirName, 'thermal_node_model')
 
         manager = RunManager(self.runName, saveDir=f'{filePath}/deployModels')
         manager.LoadRunJson(self.runName)
@@ -263,9 +268,11 @@ class BuildingController:
         """
         # Prices in cents/kWh
         # Summer: May 1st to September 30th
+        summer = [0.07884, 0.21277]
         summer = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 19, 19, 28, 28, 28, 28, 10, 10, 10, 10, 10]
         
         # Winter: October 1st to April 30th
+        winter = [0.06792, 0.18331]
         winter = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 14, 14, 17, 17, 17, 17, 10, 10, 10, 10, 10]
         
         limit1 = dt.datetime(date.year, 5, 1)

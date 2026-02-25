@@ -8,7 +8,7 @@ from opendss_wrapper import OpenDSS
 
 initTime = dt.datetime.now()
 
-with open('simParams.json') as fp:
+with open('configs/simParams.json') as fp:
     simParams = json.load(fp)
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ battery_state_file = os.path.join(ResultsDir, 'battery_state.csv')
 # ----- HELICS federate setup -----
 # Register federate from json
 fed = h.helicsCreateCombinationFederateFromConfig(
-    os.path.join(os.path.dirname(__file__), "DSSfederate.json")
+    os.path.join(os.path.dirname(__file__), "configs/DSSfederate.json")
 )
 federate_name = h.helicsFederateGetName(fed)
 logger.info(f"Created federate {federate_name}")
@@ -84,8 +84,8 @@ dss.run_command('set controlmode=time')
 df = dss.get_all_elements('Load')
 df.to_csv(load_info_file)
 
-for alias in df.index:
-    dss.remove_loadshape(alias)
+# for alias in df.index:
+#     dss.remove_loadshape(alias)
 
 storageInfo = dss.get_all_elements('Storage')
 
@@ -150,7 +150,8 @@ try:
         # Publish battery results
         logger.debug("Publishing values to other federates")
         battery_data = dss.get_all_elements('Storage')
-        batteryEnergy = battery_data['%stored'] / 100 * battery_data['kWhrated']
+        # batteryEnergy = battery_data['%Stored'] / 100 * battery_data['kWhRated']
+        batteryEnergy = battery_data['kWhStored']
         logger.debug(batteryEnergy.to_dict())
         h.helicsPublicationPublishString(pubid['battery_soc'], json.dumps(batteryEnergy.to_dict()))
         
@@ -159,7 +160,7 @@ try:
 
         voltage_results.append(dss.get_all_bus_voltages(average=True))
 
-        battery_results.append(battery_data['%stored'].to_dict())
+        battery_results.append(battery_data['kWhStored'].to_dict())
         battery_dispatch.append(battery_data['kW'].to_dict())
         battery_power.append(dss.get_power('Battery4', element='Storage', total=True)[0])
         battery_state.append(battery_data['State'].to_dict())

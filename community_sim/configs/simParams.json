@@ -1,0 +1,11 @@
+{
+    "start": "07/01/24 10:00",
+    "step": "1m",
+    "duration": "10m",
+    "warmup": "5m",
+    "testCase": "base",
+    "controlledAliases": ["2", "3", "4", "5", "9", "10", "12", "15", "17", "22", "24", "25", "26", "27", "28"],
+    "logLevel": "DEBUG",
+    "resultsDir": "results/coord_return/",
+    "controllerRun": "return_7"
+}

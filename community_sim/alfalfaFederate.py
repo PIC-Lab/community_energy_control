@@ -12,7 +12,7 @@ from shutil import copy
 
 initTime = dt.datetime.now()
 
-with open('simParams.json') as fp:
+with open('configs/simParams.json') as fp:
     simParams = json.load(fp)
 
 logging.basicConfig(
@@ -30,16 +30,16 @@ logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
 
 MainDir = os.path.abspath(os.path.dirname(__file__))
 ModelDir = os.path.join(MainDir, 'network_model')
-BuildingDir = os.path.join(MainDir, 'building_models/cc_10zcm')
+BuildingDir = os.path.join(MainDir, 'building_models')
 ResultsDir = os.path.join(MainDir, simParams['resultsDir'])
 os.makedirs(ResultsDir, exist_ok=True)
 
-copy('simParams.json', simParams['resultsDir'])
+copy('configs/simParams.json', simParams['resultsDir'])
 
 # ----- HELICS federate setup -----
 # Register federate from json
 fed = h.helicsCreateCombinationFederateFromConfig(
-    os.path.join(os.path.dirname(__file__), "alfalfaFederate.json")
+    os.path.join(os.path.dirname(__file__), "configs/alfalfaFederate.json")
 )
 federate_name = h.helicsFederateGetName(fed)
 logger.info(f"Created federate {federate_name}")
@@ -86,6 +86,9 @@ model_paths = list(Path(BuildingDir).iterdir())
 
 # Upload sites to alfalfa
 site_ids = ac.submit(model_paths)
+# site_ids = []
+# for model in model_paths:
+#     site_ids.append(ac.submit(model))
 logger.debug(site_ids)
 
 aliases = [x.name for x in model_paths]

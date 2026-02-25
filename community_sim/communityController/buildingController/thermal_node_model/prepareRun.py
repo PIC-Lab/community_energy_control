@@ -21,7 +21,7 @@ def Main():
     # Copy saved run into deployment folder
     shutil.copytree(savedRun, deployedRun, dirs_exist_ok=True, ignore=shutil.ignore_patterns('*.png', '*.csv'))
 
-    with open('../../../indexMapping.json') as fp:
+    with open('../../../configs/indexMapping.json') as fp:
         sensorIdxMapping = json.load(fp)        # Map sensor indices to simulation indices
     simIdxMapping = {v: k for k, v in sensorIdxMapping.items()}     # Map simulation indices to sensor indices
 

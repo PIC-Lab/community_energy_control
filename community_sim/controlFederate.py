@@ -11,7 +11,7 @@ import helics as h          # Importing helics before torch will cause a segfaul
 
 initTime = dt.datetime.now()
 
-with open('simParams.json') as fp:
+with open('configs/simParams.json') as fp:
     simParams = json.load(fp)
 
 logger = logging.getLogger(__name__)
@@ -24,11 +24,11 @@ logger.info(f"Simulation results will be saved to {simParams['resultsDir']}")
 
 MainDir = os.path.abspath(os.path.dirname(__file__))
 ModelDir = os.path.join(MainDir, 'network_model')
-BuildingDir = os.path.join(MainDir, 'building_models/cc_10zcm')
+BuildingDir = os.path.join(MainDir, 'building_models')
 ResultsDir = os.path.join(MainDir, simParams['resultsDir'])
 os.makedirs(ResultsDir, exist_ok=True)
 
-with open('indexMapping.json') as fp:
+with open('configs/indexMapping.json') as fp:
     sensorIdxMapping = json.load(fp)        # Map sensor indices to simulation indices
 simIdxMapping = {v: k for k, v in sensorIdxMapping.items()}     # Map simulation indices to sensor indices
 
@@ -41,7 +41,7 @@ controlOutMap = {'heatingSetpoint': 'heating setpoint', 'coolingSetpoint': 'cool
 # ----- HELICS federate setup -----
 # Register federate from json
 fed = h.helicsCreateCombinationFederateFromConfig(
-    os.path.join(os.path.dirname(__file__), "controlFederate.json")
+    os.path.join(os.path.dirname(__file__), "configs/controlFederate.json")
 )
 federate_name = h.helicsFederateGetName(fed)
 logger.info(f"Created federate {federate_name}")

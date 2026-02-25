@@ -15,7 +15,7 @@ def Main():
     cooling = list(range(70, 78))
     deadband = list(range(1,6))
     # Check if json already exists
-    fileName = 'buildingSetpoints.json'
+    fileName = 'configs/buildingSetpoints.json'
     if os.path.isfile(fileName):
         print('Json file already exists. Running this script will clear all saved values.')
         userInput = input('Do you still want to continue? y/n: ')

@@ -1,7 +1,14 @@
 python-dotenv
-neuromancer @ git+https://github.com/saltshaker/neuromancer
-tensorflow
 matplotlib
 pandas
 numpy
 multiprocessing-logging
+torch
+helics[cli]
+imageio
+cvxpy
+scipy
+statsmodels
+opendss-wrapper @ git+https://github.com/natlabrockies/opendss-wrapper.git
+neuromancer @ git+https://github.com/saltshaker/neuromancer.git
+alfalfa-client @ git+https://github.com/saltshaker/alfalfa-client.git

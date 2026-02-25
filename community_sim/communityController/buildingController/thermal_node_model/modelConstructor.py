@@ -640,7 +640,7 @@ class ControllerSystem(NeuromancerModel):
         u_tot = u_hvac + u_bat
         u_tot.key = 'u_tot'
 
-        u_load = u_hvac + 0.0
+        u_load = u_hvac + 1.0
 
         cost_loss = (cost * u_tot).minimize(weight=self.weights['cost_loss'], name='cost_loss')
         delta_loss = (u_tot[1:]-u_tot[:-1]).minimize(weight=self.weights['delta_loss'], name='delta_loss')
@@ -1216,24 +1216,21 @@ class Callback_Controller(Callback):
         shutil.rmtree(self.savePath+'/debug/')
 
 class Normalizer():
-    '''
-    Class that handles the normalizing and de-normalizing of a variety of data structures
-    
-    Attributes:
-        dataInfo: (dict{dict}) stored the values needed for norm and de-norm processes for data keys
-    '''
+    '''Class that handles the normalizing and de-normalizing of a variety of data structures'''
     def __init__(self):
         self.dataInfo = {'leave': {'max': 1,
                                    'min': 0,
                                    'mean': 0,
                                    'std': 1}}
 
-    def add_data(self, data, keys: typing.Optional[typing.Iterable[str]] = None):
+    def add_data(self, data, keys=None):
         '''
         Adds an entry to dataInfo to keep track of input data's descriptors
-
-        :param data: (dict, DictDataset, DataFrame, nparray) data to describe
-        :param keys: (list[str]) names to use when storing data descriptors, defaults to None
+        Inputs:
+            data: (dict, DictDataset, DataFrame, nparray) data to describe
+            keys: (list[str]) names to use when storing data descriptors, defaults to None
+        Outputs:
+            (None)
         '''
         # Numpy array or tensor where data descriptors (calculated along axis 0) should be stored under a single key
         # Assumes only one key is provided
@@ -1251,52 +1248,67 @@ class Normalizer():
         elif isinstance(data, pd.DataFrame) or isinstance(data, pd.Series):
             names = data.columns.tolist()
             if keys is None:
-                keys = names
+                keys = dict(zip(names, data.columns.tolist()))
+            elif isinstance(keys, list):
+                keys = dict(zip(names, keys))
         # For dict and DictDataset, use keys if user keys are not provided
         elif isinstance(data, dict) or isinstance(data, DictDataset):
             names = list(data.keys())
             if keys is None:
-                names = keys
+                keys = dict(zip(data.keys()))
+            elif isinstance(keys, list):
+                keys = dict(zip(names, keys))
         else:
             raise TypeError('Data structure used is not supported')
         
-        for key, name in zip(keys,names):
-                self.dataInfo[key] = {'max': np.max(data[name], axis=0),
-                                    'min': np.min(data[name], axis=0),
-                                    'mean': np.mean(data[name], axis=0),
-                                    'std': np.std(data[name], axis=0)}
+        for dataName, normKey in keys.items():
+                self.dataInfo[normKey] = {'max': np.max(data[dataName], axis=0),
+                                    'min': np.min(data[dataName], axis=0),
+                                    'mean': np.mean(data[dataName], axis=0),
+                                    'std': np.std(data[dataName], axis=0)}
         
-        if self.dataInfo[key]['max'] == self.dataInfo[key]['min']:
-            self.dataInfo[key] = self.dataInfo['leave']
+        if self.dataInfo[normKey]['max'] == self.dataInfo[normKey]['min']:
+            self.dataInfo[normKey] = self.dataInfo['leave']
             
         return
 
-    def norm(self, data, keys: typing.Optional[typing.Iterable[str]] = None):
+    def norm(self, data, keys=None):
         '''
         Normalizes a provided dataset based on previously added descriptors
-
-        :param data: (dict, DictDataset, DataFrame, nparray) data to normalize
-        :param keys: (list[str]) keys to use when normalizing, defaults to None
-        :return: Normalized data with data structure matching input
+        Inputs:
+            data: (dict, DictDataset, DataFrame, nparray) data to normalize
+            keys: (list[str]) keys to use when normalizing, defaults to None
+        Outputs:
+            Normalized data
         '''
         # numpy arrays and tensors are normalized based on a multi-dimensonal descriptor stored under one key
         # Assumes only one key is provided
         if isinstance(data, (np.ndarray, torch.Tensor)):
             if keys is None:
                 raise ValueError('List of keys is required for numpy arrays and torch tensors')
-            stats = self.dataInfo[keys[0]]
-            norm_data = (data - stats['min']) / (stats['max'] - stats['min'])
+            if len(keys) == 1:
+                stats = self.dataInfo[keys[0]]
+                norm_data = (data - stats['min']) / (stats['max'] - stats['min'])
+            elif len(keys) in data.shape:
+                norm_data = self.normArray(data, keys)
+            else:
+                raise ValueError('Number of keys does not match len of any dimensions of provided array')
             return norm_data
+        
         # For dataframe, use column names if user keys are not provided
         elif isinstance(data, pd.DataFrame):
             names = data.columns.tolist()
             if keys is None:
-                keys = data.columns.tolist()
+                keys = dict(zip(names, data.columns.tolist()))
+            elif isinstance(keys, list):
+                keys = dict(zip(names, keys))
         # For dict and DictDataset, use keys if user keys are not provided
         elif isinstance(data, dict) or isinstance(data, DictDataset):
             names = list(data.keys())
             if keys is None:
-                keys = list(data.keys())
+                keys = dict(zip(data.keys()))
+            elif isinstance(keys, list):
+                keys = dict(zip(names, keys))
         else:
             # Special case for a single, scalar value
             try:
@@ -1304,45 +1316,61 @@ class Normalizer():
                 norm_data = (data - stats['min']) / (stats['max'] - stats['min'])
                 return norm_data
             except: 
-                raise TypeError('Data structure used is not supported')
+                raise TypeError(f'Data structure {type(data)} is not supported')
 
         # Min max normalization
         norm_data = data.copy()
-        for key,name in zip(keys,names):
-            stats = self.dataInfo[key]
-            if isinstance(norm_data[name], torch.Tensor):
-                dev = norm_data[name].get_device()
-                if dev == -1:
-                    device = torch.device("cpu")
-                else:
-                    device = torch.device("cuda:"+str(dev))
-                norm_data[name] = (norm_data[name] - torch.tensor(stats['min'], device=device)) / torch.tensor((stats['max'] - stats['min']), device=device)
+        for dataName, normKey in keys.items():
+            if isinstance(normKey, list):
+                norm_data[dataName] = self.normArray(norm_data[dataName], normKey)
             else:
-                norm_data[name] = (norm_data[name] - stats['min']) / (stats['max'] - stats['min'])
+                stats = self.dataInfo[normKey]
+                if isinstance(norm_data[dataName], torch.Tensor):
+                    dev = norm_data[dataName].get_device()
+                    if dev == -1:
+                        device = torch.device("cpu")
+                    else:
+                        device = torch.device("cuda:"+str(dev))
+                    norm_data[dataName] = (norm_data[dataName] - torch.tensor(stats['min'], device=device)) / torch.tensor((stats['max'] - stats['min']), device=device)
+                else:
+                    norm_data[dataName] = (norm_data[dataName] - stats['min']) / (stats['max'] - stats['min'])
 
         return norm_data
+
+    def normArray(self, data, keys):
+        '''
+        Helper function for normalizing an array-like data structure with multiple keys
+
+        '''
+        norm_data = data.copy()
+        axis = data.shape.index(len(keys))
+        for i, key in enumerate(keys):
+            stats = self.dataInfo[key]
+            data_slice = Normalizer.arraySlice(norm_data, axis, i, i+1)
+            data_slice[:,:,:] = (data_slice - stats['min']) / (stats['max'] - stats['min'])
+        return norm_data
     
-    def normDelta(self, data, keys: typing.Iterable[str]):
+    def normDelta(self, data, keys):
         '''
         Special case normalizer for delta values
-        
-        :param data: (ndarray or scalar value) delta value(s) to normalize
-        :param keys: list[str] list of length 1 with key to use
-
-        :return: normalized data matching data structure of input
+        Inputs:
+            data: (ndarray or scalar value) delta value(s) to normalize
+            keys: list[str] list of length 1 with key to use
+        Outputs:
+            normalized data
         '''
         stats = self.dataInfo[keys[0]]
         norm_data = data / (stats['max'] - stats['min'])
         return norm_data
 
-    def denorm(self, data, keys: typing.Optional[typing.Iterable[str]] = None):
+    def denorm(self, data, keys=None):
         '''
         De-normalize a provided dataset based on previously added descriptors
-
-        :param data: (dict, DictDataset, DataFrame, nparray) data to de-normalize
-        :param keys: (list[str]) keys to use for de-normalizing, defaults to None
-
-        :return: De-normalized data matching data structure of input
+        Inputs:
+            data: (dict, DictDataset, DataFrame, nparray) data to de-normalize
+            keys: (list[str]) keys to use for de-normalizing, defaults to None
+        Outputs:
+            De-normalized data
         '''
         # numpy arrays and tensors are de-normalized based on a multi-dimensonal descriptor stored under one key
         # Assumes only one key is provided
@@ -1352,16 +1380,21 @@ class Normalizer():
             stats = self.dataInfo[keys[0]]
             denorm_data = data * (stats['max'] - stats['min']) + stats['min']
             return denorm_data
+        
         # For dataframe, use column names if user keys are not provided
         if isinstance(data, pd.DataFrame):
             names = data.columns.tolist()
             if keys is None:
-                keys = data.columns.tolist()
+                keys = dict(zip(names, data.columns.tolist()))
+            elif isinstance(keys, list):
+                keys = dict(zip(names, keys))
         # For dict and DictDataset, use keys if user keys are not provided
         elif isinstance(data, dict) or isinstance(data, DictDataset):
             names = list(data.keys())
             if keys is None:
-                keys = list(data.keys())
+                keys = dict(zip(names, data.keys()))
+            elif isinstance(keys, list):
+                keys = dict(zip(names, keys))
         else:
             # Special case for a single, scalar value
             try:
@@ -1373,25 +1406,46 @@ class Normalizer():
 
         denorm_data = data.copy()
 
-        for key,name in zip(keys,names):
-            stats = self.dataInfo[key]
-            if isinstance(denorm_data[name], torch.Tensor):
-                dev = denorm_data[name].get_device()
-                if dev == -1:
-                    device = torch.device("cpu")
-                else:
-                    device = torch.device("cuda:"+str(dev))
-                denorm_data[name] = denorm_data[name] * torch.tensor((stats['max'] - stats['min']), device=device) + torch.tensor(stats['min'], device=device)
+        for dataName, normKey in keys.items():
+            if isinstance(normKey, list):
+                try:
+                    denorm_data[dataName] = self.denormArray(data[dataName], normKey)
+                except:
+                    print(dataName)
+                    raise ValueError
             else:
-                denorm_data[name] = denorm_data[name] * (stats['max'] - stats['min']) + stats['min']
+                stats = self.dataInfo[normKey]
+                if isinstance(denorm_data[dataName], torch.Tensor):
+                    dev = denorm_data[dataName].get_device()
+                    if dev == -1:
+                        device = torch.device("cpu")
+                    else:
+                        device = torch.device("cuda:"+str(dev))
+                    denorm_data[dataName] = denorm_data[dataName] * torch.tensor((stats['max'] - stats['min']), device=device) + torch.tensor(stats['min'], device=device)
+                else:
+                    denorm_data[dataName] = denorm_data[dataName] * (stats['max'] - stats['min']) + stats['min']
 
+        return denorm_data
+    
+    def denormArray(self, data, keys):
+        '''
+        Helper function for de-normalizing an array-like data structure with multiple keys
+
+        '''
+        if isinstance(data, torch.Tensor):
+            denorm_data = data.clone()
+        else:
+            denorm_data = data.copy()
+        axis = data.shape.index(len(keys))
+        for i, key in enumerate(keys):
+            stats = self.dataInfo[key]
+            data_slice = Normalizer.arraySlice(denorm_data, axis, i, i+1)
+            data_slice[:,:,:] = data_slice * (stats['max'] - stats['min']) + stats['min']
         return denorm_data
     
     def save(self, filePath=''):
         '''
         Saves the dataInfo dict as a json file
-
-        :param filePath: (str) path to the directory the normalizer info should be saved in
         '''
         dataInfoCopy = copy.deepcopy(self.dataInfo)
         for key,value in dataInfoCopy.items():
@@ -1405,8 +1459,6 @@ class Normalizer():
     def load(self, filePath=''):
         '''
         Loads a previously saved dataInfo dict from a json file
-
-        :param filePath: (str) path to the directory containing previously saved normalizer info
         '''
         with open(filePath+'norm_dataInfo.json') as fp:
             dataInfoCopy = json.load(fp)
@@ -1415,6 +1467,20 @@ class Normalizer():
                 for k,v in value.items():
                     value[k] = np.array(v)
         self.dataInfo = dataInfoCopy
+
+    @staticmethod
+    def arraySlice(a, axis, start, end, step=1):
+        '''
+        Returns a view of a slice of an array-like object
+        :param a: (nd.array/torch.tensor) array to slice
+        :param axis: (int) axis to slice along
+        :param start: (int) beginning index of slice
+        :param end: (int) ending index of slice
+        :param step: (int) step size of slice, defaults to 1
+
+        :return: slice of a
+        '''
+        return a[(slice(None),) * (axis % a.ndim) + (slice(start, end, step),)]
 
 def TOUPricing(date, timeSteps=96):
     """
