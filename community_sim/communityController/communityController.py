@@ -10,23 +10,26 @@ from communityController.flexibility_metrics.flexibilityMetrics import Flexibili
 class CommunityController:
     '''
     '''
-    def __init__(self, controlAliasList, runName, testCase='MPC'):
+    def __init__(self, controlAliasList, runName, logger, testCase='DPC', nstepsOverride=None):
         '''
         '''
         dirName = os.path.dirname(__file__)
 
         self.controlAliasList = controlAliasList
         self.nsteps = 60
+        self.logger = logger
+        self.testCase = testCase
 
         self.controllerList = []
         self.flexibilityList = []
         self.trajectoryList = {}
+
         self.coordDebug = {}
 
         self.predictedLoad = np.zeros((len(controlAliasList), self.nsteps))
         self.predictedFlex = np.zeros((len(controlAliasList), self.nsteps))
 
-        self.ControllerInit(runName, testCase, dirName)
+        self.ControllerInit(runName, testCase, nstepsOverride, dirName)
         self.CoordinatorInit(runName)
         self.FlexibilityInit(runName)
 
@@ -36,11 +39,13 @@ class CommunityController:
         self.coordinator = Coordinator(len(self.controlAliasList), self.nsteps, 1)
         self.coordinator.AdjustInit()
 
-    def ControllerInit(self, runName, testCase, dirName):
+    def ControllerInit(self, runName, testCase, nstepsOverride, dirName):
         '''
         '''
         # if self.mode == 'deploy':
         #     self.config = dotenv_values('../.env')
+
+        self.logger.debug(self.controlAliasList)
         
         # Get all devices from a building using API
         # Using json file for now
@@ -53,7 +58,8 @@ class CommunityController:
                 if building['house_id'] == alias:
                     devices = building['devices']
                     break
-            self.controllerList.append(BuildingController(alias, devices, runName, testCase=testCase))
+            self.controllerList.append(BuildingController(alias, devices, runName, self.logger, testCase=testCase, nstepsOverride=nstepsOverride))
+            self.logger.debug(f"Created building controller for {alias}")
 
     def FlexibilityInit(self, runName):
         '''
@@ -70,10 +76,12 @@ class CommunityController:
 
         # Update coordinator
         self.coordinator.predictedLoad = self.predictedLoad
-        self.coordinator.predictedFlexibility = self.predictedFlex
-        self.coordinator.baseLoad = np.ones((2, self.coordinator.nsteps)) * 10
+        self.coordinator.predictedFlex = self.predictedFlex
+
+        # This needs to read historical data
+        self.coordinator.baseLoad = np.ones_like(self.predictedLoad) * 2
         self.coordinator.Step()
-        coordinateSignals = self.predictedLoad - self.coordinator.adjustValues['flexLoad']
+        coordinateSignals = self.predictedLoad + self.coordinator.adjustValues['flexLoad']
 
         # Update controllers
         controlEvents = []
@@ -83,12 +91,17 @@ class CommunityController:
             self.coordDebug[alias] = {}
             self.coordDebug[alias]['usagePenalty'] = self.coordinator.usagePenalty[i]
             self.coordDebug[alias]['flexLoad'] = self.coordinator.adjustValues['flexLoad'][i,:]
-            # self.coordDebug[alias]['trans_ref'] = self.coordinator.adjustValues['trans_ref']
-            # self.coordDebug[alias]['predLoad']
-            # self.coordDebug[alias]['baseLoad']
-            # self.coordDebug[alias]['pow_ref']
-            self.predictedLoad[i,:] += trajectories['horizon_u_hvac'].detach().numpy()[0,:,0]
+            self.coordDebug[alias]['predLoad'] = self.coordinator.predictedLoad[i,:]
+            if self.testCase == 'DPC':
+                self.predictedLoad[i,:] = trajectories['horizon_u_tot'].detach().numpy()[0,:,0]
+            elif self.testCase == 'MPC':
+                self.predictedLoad[i,:] = trajectories['u_hvac'][:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
+
+        self.coordDebug['gen'] = {}
+        self.coordDebug['gen']['baseLoad'] = self.coordinator.baseLoad
+        for i in range(len(self.coordinator.transInfo.keys())):
+            self.coordDebug['gen'][f"trans{i+1}"] = self.coordinator.adjustProb.prob.param_dict['trans_ref'].value[i,:]
         
         return controlEvents
 

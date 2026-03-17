@@ -1,11 +1,12 @@
 {
-    "start": "07/01/24 10:00",
+    "start": "07/01/24 00:00",
     "step": "1m",
-    "duration": "10m",
+    "duration": "1d",
     "warmup": "5m",
-    "testCase": "base",
-    "controlledAliases": ["2", "3", "4", "5", "9", "10", "12", "15", "17", "22", "24", "25", "26", "27", "28"],
+    "testCase": "MPC",
+    "controlledAliases": ["2"],
     "logLevel": "DEBUG",
-    "resultsDir": "results/coord_return/",
-    "controllerRun": "return_7"
+    "resultsDir": "results/coord_mpc_4/",
+    "controllerRun": "return_7",
+    "nstepsOverride": 60
 }

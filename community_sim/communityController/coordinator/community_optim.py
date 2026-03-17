@@ -24,9 +24,10 @@ class Coordinator():
 
         self.predictedLoad = np.zeros((self.numBuildings, self.nsteps))
         self.predictedFlex = np.zeros((self.numBuildings, self.nsteps))
-        self.baseLoad = np.zeros((len(self.transInfo.keys()), self.nsteps))
+        # self.baseLoad = np.zeros((len(self.transInfo.keys()), self.nsteps))
+        self.baseLoad = np.zeros((self.numBuildings, self.nsteps))
         self.countSinceChange = 0
-        self.usagePenalty = np.zeros((self.numBuildings))
+        self.usagePenalty = np.zeros((self.numBuildings, self.nsteps))
         self.adjustValues = {'flexLoad': np.zeros((self.numBuildings, self.nsteps))}
 
         self.overloadList = []
@@ -50,13 +51,14 @@ class Coordinator():
         :param verbose: (bool) Should optimization solve be run with verbose output. For debugging purposes, defaults to False
         '''
         paramDict = {}
-        paramDict['usagePenalty'] = np.ones((self.numBuildings))
+        paramDict['usagePenalty'] = np.ones((self.numBuildings, self.nsteps))
         paramDict['pow_ref'] = np.ones((self.nsteps)) * 4
         paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
         paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 200
-        paramDict['trans_ref'] = np.ones((len(self.transInfo.keys()), self.nsteps)) * 2
+        paramDict['trans_ref'] = np.ones((len(self.transInfo.keys()), self.nsteps)) * 5
         paramDict['predLoad'] = np.ones_like(self.predictedLoad)
-        paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
+        # paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
+        paramDict['baseLoad'] = np.ones((self.numBuildings, self.nsteps))
         self.adjustProb.SolveProblem(paramDict, verbose=verbose)
     
     def TransformerOverload(self):
@@ -104,7 +106,6 @@ class Coordinator():
         '''
         paramDict = {}
         paramDict['usagePenalty'] = 1 + self.usagePenalty
-        # paramDict['dr_ref'] = -1 * (np.sum(self.overloadList[0], axis=0) + np.sum(self.overloadList[1], axis=0))
         paramDict['pow_ref'] = np.ones(self.nsteps) * 100
         temp = np.ones((len(self.transInfo.keys()), self.nsteps))
         i = 0
@@ -115,7 +116,8 @@ class Coordinator():
         paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
         paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 100
         paramDict['predLoad'] = self.predictedLoad
-        paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
+        # paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
+        paramDict['baseLoad'] = np.ones((self.numBuildings, self.nsteps))
         self.adjustProb.SolveProblem(paramDict, verbose=verbose)
         adjustValues = self.adjustProb.GetValues()
         return adjustValues
@@ -124,10 +126,11 @@ class Coordinator():
         '''
         Dispatch phase: Format desired consumption changes as control signals to be provided to each house
         '''
-        if not(adjustValues['flexLoad'] is None):
-            self.usagePenalty = np.abs(self.predictedLoad - adjustValues['flexLoad'])
-            self.usagePenalty = self.usagePenalty / np.sum(self.usagePenalty)
-        else:
+        # if not(adjustValues['flexLoad'] is None):
+        #     self.usagePenalty = np.abs(adjustValues['flexLoad'])
+        #     # self.usagePenalty = self.usagePenalty / np.sum(self.usagePenalty)
+        # else:
+        if adjustValues['flexLoad'] is None:
             print('Optimization infeasible')
             self.adjustValues['flexLoad'] = np.zeros((self.numBuildings, self.nsteps))
 
@@ -137,13 +140,19 @@ class Coordinator():
 
         :return: (bool) whether or not the coordinator updated this step
         '''
-
-        self.usagePenalty -= self.stepFreq * 0.01
-        self.usagePenalty = np.clip(self.usagePenalty, a_min=0, a_max=100)
+        # This needs to update for the future
+        # self.usagePenalty -= self.stepFreq * 0.01
 
         if self.Assess():
             self.adjustValues = self.Adjust()
             self.Dispatch(self.adjustValues)
+
+        self.usagePenalty[:,:-1] = self.usagePenalty[:,1:]
+        if self.adjustValues['flexLoad'] is None:
+            self.usagePenalty[:,-1] = self.usagePenalty[:,-2] - self.stepFreq * 0.01
+        else:
+            self.usagePenalty[:,-1] = np.sum(self.adjustValues['flexLoad'], axis=1)
+        self.usagePenalty = np.clip(self.usagePenalty, a_min=0, a_max=100)
 
         return True
         
@@ -191,11 +200,13 @@ class AdjustOptimization(ConvexProblem):
         '''
         flexLoad = cp.Variable((self.numBuildings, self.n), name='flexLoad')
 
-        usagePenalty = cp.Parameter(self.numBuildings, name='usagePenalty')
+        usagePenalty = cp.Parameter((self.numBuildings, self.n), name='usagePenalty')
         dr_ref = cp.Parameter(self.n, name='pow_ref')
         trans_ref = cp.Parameter((len(self.transLimits), self.n), name='trans_ref')
         predLoad = cp.Parameter((self.numBuildings, self.n), name='predLoad')
-        baseLoad = cp.Parameter((len(self.transLimits), self.n), name='baseLoad')
+        # baseLoad = cp.Parameter((len(self.transLimits), self.n), name='baseLoad')
+        baseLoad = cp.Parameter((self.numBuildings, self.n), name='baseLoad')
+        totalLoad = predLoad + baseLoad + flexLoad
         W1 = 2
         W2 = 1
         W3 = 1
@@ -203,13 +214,13 @@ class AdjustOptimization(ConvexProblem):
         flexMax = cp.Parameter((self.numBuildings, self.n), name='flexMax')
         flexMin = cp.Parameter((self.numBuildings, self.n), name='flexMin')
 
-        objective = cp.Minimize(W1*cp.sum_squares(usagePenalty@flexLoad))
+        objective = cp.Minimize(W1*cp.sum_squares(usagePenalty.T@flexLoad))
         constraints = []
-        constraints.append(flexLoad + predLoad <= flexMax)
-        constraints.append(flexLoad + predLoad >= flexMin)
-        constraints.append(cp.sum(flexLoad+predLoad, axis=0)+cp.sum(baseLoad, axis=0) <= dr_ref)
+        constraints.append(predLoad + flexLoad <= flexMax)
+        constraints.append(predLoad + flexLoad >= flexMin)
+        constraints.append(cp.sum(totalLoad, axis=0) <= dr_ref)
         for i in range(0, len(self.transLimits)):
-            constraints.append(self.transMap[i,:]@flexLoad+baseLoad[i,:] <= trans_ref[i,:])
+            constraints.append(self.transMap[i,:]@totalLoad <= trans_ref[i,:])
 
         self.prob = cp.Problem(objective, constraints)
 

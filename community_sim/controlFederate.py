@@ -14,8 +14,11 @@ initTime = dt.datetime.now()
 with open('configs/simParams.json') as fp:
     simParams = json.load(fp)
 
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S')
+
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
 logger.setLevel(simParams['logLevel'])
 
 logger.info("----- Control Federate Logs -----")
@@ -77,12 +80,13 @@ logger.info(f"Run period: {start_time} to {end_time}")
 
 # ----- Control setup -----
 aliasesSensorIdx = [simIdxMapping[alias] for alias in simParams['controlledAliases']]       # Convert list of controlled buildings from sim idx to sensor idx
-controller = CommunityController(aliasesSensorIdx, simParams['controllerRun'])
+controller = CommunityController(aliasesSensorIdx, simParams['controllerRun'], logger, simParams['testCase'], simParams['nstepsOverride'])
 
 # ----- Primary co-simulation loop -----
 # Define lists for data collection
 outputs = {alias: [] for alias in aliasesSensorIdx}
 coord_out = {alias: [] for alias in aliasesSensorIdx}
+coord_out['gen'] = []
 
 # Execute federate and start co-sim
 first = True
@@ -140,29 +144,58 @@ try:
             input_dicts.append(tempDict)
 
         for alias in aliasesSensorIdx:
-            if first:
-                predictedTraj = {}
-                predictedTraj[alias] = controller.trajectoryList[alias]['horizon_stored'][0,:,0].detach().numpy()
-                first = False
+            # if first:
+            #     predictedTraj = {}
+            #     predictedTraj[alias] = controller.trajectoryList[alias]['horizon_stored'][0,:,0].detach().numpy()
+            #     first = False
 
             controlTraj = {}
             controlTraj['Time'] = current_time
-            controlTraj['Control Effort'] = controller.trajectoryList[alias]['horizon_u_hvac'][0,0,0].detach().item()
-            controlTraj['Predicted Temperature'] = controller.trajectoryList[alias]['horizon_y'][0,0,0].detach().item()
-            controlTraj['Ymax'] = controller.trajectoryList[alias]['horizon_ymax'][0,0,0].detach().item()
-            controlTraj['Ymin'] = controller.trajectoryList[alias]['horizon_ymin'][0,0,0].detach().item()
-            controlTraj['powerRef'] = controller.trajectoryList[alias]['horizon_powerRef'][0,0,0].detach().item()
-            controlTraj['cost'] = controller.trajectoryList[alias]['horizon_cost'][0,0,0].detach().item()
-            controlTraj['stored'] = controller.trajectoryList[alias]['horizon_stored'][0,0,0].detach().item()
-            controlTraj['u_bat'] = controller.trajectoryList[alias]['horizon_u_bat'][0,0,0].detach().item()
-            controlTraj['bat_ref'] = controller.trajectoryList[alias]['horizon_batRef'][0,0,0].detach().item()
+            if simParams['testCase'] == 'DPC':
+                names = ['u_hvac', 'y', 'ymax', 'ymin', 'powerRef', 'cost', 'stored', 'u_bat', 'bat_ref', 'u_tot']
+                for key in names:
+                    controlTraj[key] = controller.trajectoryList[alias][f"horizon_{key}"][0,0,0].detach().item()
+                # controlTraj['u_hvac'] = controller.trajectoryList[alias]['horizon_u_hvac'][0,0,0].detach().item()
+                # controlTraj['temperature'] = controller.trajectoryList[alias]['horizon_y'][0,0,0].detach().item()
+                # controlTraj['Ymax'] = controller.trajectoryList[alias]['horizon_ymax'][0,0,0].detach().item()
+                # controlTraj['Ymin'] = controller.trajectoryList[alias]['horizon_ymin'][0,0,0].detach().item()
+                # controlTraj['powerRef'] = controller.trajectoryList[alias]['horizon_powerRef'][0,0,0].detach().item()
+                # controlTraj['cost'] = controller.trajectoryList[alias]['horizon_cost'][0,0,0].detach().item()
+                # controlTraj['stored'] = controller.trajectoryList[alias]['horizon_stored'][0,0,0].detach().item()
+                # controlTraj['u_bat'] = controller.trajectoryList[alias]['horizon_u_bat'][0,0,0].detach().item()
+                # controlTraj['bat_ref'] = controller.trajectoryList[alias]['horizon_batRef'][0,0,0].detach().item()
+                # controlTraj['u_tot'] = controller.trajectoryList[alias]['horizon_u_tot'][0,0,0].detach().item()
+            elif simParams['testCase'] == 'MPC':
+                names = ['u_hvac', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost']
+                for key in names:
+                    controlTraj[key] = controller.trajectoryList[alias][key][0,0]
+                # controlTraj['u_hvac'] = controller.trajectoryList[alias]['u_hvac'][0,0]
+                # controlTraj['u_bat'] = controller.trajectoryList[alias]['u_bat'][0,0]
+                # controlTraj['u_tot'] = controller.trajectoryList[alias]['u_tot'][0,0]
+                # controlTraj['temperature'] = controller.trajectoryList[alias]['y'][0,0]
+                # controlTraj['Ymax'] = controller.trajectoryList[alias]['ymax'][0,0]
+                # controlTraj['Ymin'] = controller.trajectoryList[alias]['ymin'][0,0]
+                # controlTraj['d'] = controller.trajectoryList[alias]['d'][0,0]
+                # controlTraj['batmax'] = controller.trajectoryList[alias]['batmax'][0,0]
+                # controlTraj['batmin'] = controller.trajectoryList[alias]['batmin'][0,0]
+                # controlTraj['stored'] = controller.trajectoryList[alias]['stored'][0,0]
+                # controlTraj['powerRef'] = controller.trajectoryList[alias]['u'][0,0]
+                # controlTraj['cost'] = controller.trajectoryList[alias]['cost'][0,0]
+                controlTraj['mpc_feas'] = controller.controllerList[aliasesSensorIdx.index(alias)].feasible
+                controlTraj['mpc_obj'] = controller.controllerList[aliasesSensorIdx.index(alias)].prob.objective.value
             outputs[alias].append(controlTraj)
 
             coordDict = {}
             coordDict['Time'] = current_time
-            coordDict['usagePenalty'] = controller.coordDebug[alias]['usagePenalty'][0]
-            coordDict['flexLoad'] = controller.coordDebug[alias]['flexLoad'][0]
+            for key, value in controller.coordDebug[alias].items():
+                coordDict[key] = value[0]
             coord_out[alias].append(coordDict)
+
+        genDict = {}
+        genDict['Time'] = current_time
+        for key, value in controller.coordDebug['gen'].items():
+            genDict[key] = value[0]
+        coord_out['gen'].append(genDict)
 
         logger.debug("Publishing values to other federates")
         h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
@@ -185,7 +218,10 @@ for key, building in coord_out.items():
     df = pd.DataFrame(building)
     col = df.pop('Time')
     df.insert(0, col.name, col)
-    coord_df.append(df)
+    if key == 'gen':
+        df.to_csv(ResultsDir+'gen_coord.csv', index=False)
+    else:
+        coord_df.append(df)
 
 # Save data to csv
 aggregateLoad = np.zeros(len(outputs_df[0]))
