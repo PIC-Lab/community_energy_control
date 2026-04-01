@@ -60,23 +60,6 @@ class ExampleEPMeasure < OpenStudio::Measure::EnergyPlusMeasure
 
     register_output(create_output_meter("Electricity:HVAC")).display_name = "Electricity:HVAC"
 
-    # Heating and cooling coils
-    # heating_coils = workspace.getObjectsByType('Coil:Heating:DX:MultiSpeed'.to_IddObjectType)
-    # heating_coils.each do |heating_coil|
-    #   name = heating_coil.name.get
-    #   heating_rate = create_output_variable(name, 'Heating Coil Heating Rate')
-    #   heating_rate.display_name = "#{name} Heating Rate"
-    #   register_output(heating_rate)
-    # end
-
-    # cooling_coils = workspace.getObjectsByType('Coil:Cooling:DX:MultiSpeed'.to_IddObjectType)
-    # cooling_coils.each do |cooling_coil|
-    #   name = cooling_coil.name.get
-    #   cooling_rate = create_output_variable(name, 'Cooling Coil Sensible Cooling Rate')
-    #   cooling_rate.display_name = "#{name} Cooling Rate"
-    #   register_output(cooling_rate)
-    # end
-
     report_inputs_outputs
 
     runner.registerFinalCondition("Done")

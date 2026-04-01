@@ -167,6 +167,7 @@ try:
                 # controlTraj['u_tot'] = controller.trajectoryList[alias]['horizon_u_tot'][0,0,0].detach().item()
             elif simParams['testCase'] == 'MPC':
                 names = ['u_hvac', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost']
+                # names = ['u_hvac', 'y', 'y_max', 'y_min', 'd', 'cost']
                 for key in names:
                     controlTraj[key] = controller.trajectoryList[alias][key][0,0]
                 # controlTraj['u_hvac'] = controller.trajectoryList[alias]['u_hvac'][0,0]
@@ -183,6 +184,8 @@ try:
                 # controlTraj['cost'] = controller.trajectoryList[alias]['cost'][0,0]
                 controlTraj['mpc_feas'] = controller.controllerList[aliasesSensorIdx.index(alias)].feasible
                 controlTraj['mpc_obj'] = controller.controllerList[aliasesSensorIdx.index(alias)].prob.objective.value
+                controlTraj['hvac_mode'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_mode
+                controlTraj['hvac_lock'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_lock
             outputs[alias].append(controlTraj)
 
             coordDict = {}

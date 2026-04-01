@@ -6,7 +6,7 @@
     "testCase": "MPC",
     "controlledAliases": ["2"],
     "logLevel": "DEBUG",
-    "resultsDir": "results/coord_mpc_4/",
+    "resultsDir": "results/coord_mpc_9/",
     "controllerRun": "return_7",
     "nstepsOverride": 60
 }

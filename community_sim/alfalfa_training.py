@@ -130,7 +130,6 @@ def RunAlfalfa(start_time, duration, first):
             # Should probably move this to the measures
             alf_outs['Whole Building Electricity'] *= 1e-3      # convert to kW
             alf_outs['Heating:Electricity'] *= 1e-3 / 60
-            # alf_outs['Cooling:Electricity'] *= 1e-3 / 60
             alf_outs['WaterSystems:Electricity'] *= 1e-3 / 60
             alf_outs['Electricity:HVAC'] *= 1e-3 / 60
             outputs[alias].append(alf_outs)
