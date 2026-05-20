@@ -1,12 +1,12 @@
 {
     "start": "07/01/24 00:00",
     "step": "1m",
-    "duration": "1d",
+    "duration": "2d",
     "warmup": "5m",
-    "testCase": "MPC",
+    "testCase": "MPC_alt",
     "controlledAliases": ["2"],
-    "logLevel": "DEBUG",
-    "resultsDir": "results/coord_mpc_9/",
+    "logLevel": "INFO",
+    "resultsDir": "results/setpointControl_25/",
     "controllerRun": "return_7",
-    "nstepsOverride": 60
+    "nstepsOverride": 120
 }

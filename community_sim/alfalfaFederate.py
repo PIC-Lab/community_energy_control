@@ -151,7 +151,7 @@ try:
         h.helicsFederateRequestTime(fed, present_step)
 
         # get signals from other federate
-        logger.debug(f"Current time: {current_time}, step: {step}")
+        logger.info(f"Current time: {current_time}, step: {step}")
         isupdated = h.helicsInputIsUpdated(subid['control_events'])
         if isupdated == 1:
             controlEvents = h.helicsInputGetString(subid['control_events'])

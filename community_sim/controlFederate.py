@@ -100,7 +100,7 @@ try:
         h.helicsFederateRequestTime(fed, present_step)
 
         # get signals from other federate
-        logger.debug(f"Current time: {current_time}, step: {step}")
+        logger.info(f"Current time: {current_time}, step: {step}")
         isupdated = h.helicsInputIsUpdated(subid['battery_soc'])
         if isupdated == 1:
             batterySOC = h.helicsInputGetString(subid['battery_soc'])
@@ -155,37 +155,25 @@ try:
                 names = ['u_hvac', 'y', 'ymax', 'ymin', 'powerRef', 'cost', 'stored', 'u_bat', 'bat_ref', 'u_tot']
                 for key in names:
                     controlTraj[key] = controller.trajectoryList[alias][f"horizon_{key}"][0,0,0].detach().item()
-                # controlTraj['u_hvac'] = controller.trajectoryList[alias]['horizon_u_hvac'][0,0,0].detach().item()
-                # controlTraj['temperature'] = controller.trajectoryList[alias]['horizon_y'][0,0,0].detach().item()
-                # controlTraj['Ymax'] = controller.trajectoryList[alias]['horizon_ymax'][0,0,0].detach().item()
-                # controlTraj['Ymin'] = controller.trajectoryList[alias]['horizon_ymin'][0,0,0].detach().item()
-                # controlTraj['powerRef'] = controller.trajectoryList[alias]['horizon_powerRef'][0,0,0].detach().item()
-                # controlTraj['cost'] = controller.trajectoryList[alias]['horizon_cost'][0,0,0].detach().item()
-                # controlTraj['stored'] = controller.trajectoryList[alias]['horizon_stored'][0,0,0].detach().item()
-                # controlTraj['u_bat'] = controller.trajectoryList[alias]['horizon_u_bat'][0,0,0].detach().item()
-                # controlTraj['bat_ref'] = controller.trajectoryList[alias]['horizon_batRef'][0,0,0].detach().item()
-                # controlTraj['u_tot'] = controller.trajectoryList[alias]['horizon_u_tot'][0,0,0].detach().item()
             elif simParams['testCase'] == 'MPC':
-                names = ['u_hvac', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost']
+                names = ['u_heat', 'u_cool', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref']
                 # names = ['u_hvac', 'y', 'y_max', 'y_min', 'd', 'cost']
                 for key in names:
+                    if not(key in controller.trajectoryList[alias].keys()):
+                        continue
                     controlTraj[key] = controller.trajectoryList[alias][key][0,0]
-                # controlTraj['u_hvac'] = controller.trajectoryList[alias]['u_hvac'][0,0]
-                # controlTraj['u_bat'] = controller.trajectoryList[alias]['u_bat'][0,0]
-                # controlTraj['u_tot'] = controller.trajectoryList[alias]['u_tot'][0,0]
-                # controlTraj['temperature'] = controller.trajectoryList[alias]['y'][0,0]
-                # controlTraj['Ymax'] = controller.trajectoryList[alias]['ymax'][0,0]
-                # controlTraj['Ymin'] = controller.trajectoryList[alias]['ymin'][0,0]
-                # controlTraj['d'] = controller.trajectoryList[alias]['d'][0,0]
-                # controlTraj['batmax'] = controller.trajectoryList[alias]['batmax'][0,0]
-                # controlTraj['batmin'] = controller.trajectoryList[alias]['batmin'][0,0]
-                # controlTraj['stored'] = controller.trajectoryList[alias]['stored'][0,0]
-                # controlTraj['powerRef'] = controller.trajectoryList[alias]['u'][0,0]
-                # controlTraj['cost'] = controller.trajectoryList[alias]['cost'][0,0]
                 controlTraj['mpc_feas'] = controller.controllerList[aliasesSensorIdx.index(alias)].feasible
                 controlTraj['mpc_obj'] = controller.controllerList[aliasesSensorIdx.index(alias)].prob.objective.value
                 controlTraj['hvac_mode'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_mode
                 controlTraj['hvac_lock'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_lock
+            elif simParams['testCase'] == 'MPC_alt':
+                names = ['u_cool', 'u_cool_sp', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref']
+                for key in names:
+                    if not(key in controller.trajectoryList[alias].keys()):
+                        continue
+                    controlTraj[key] = controller.trajectoryList[alias][key][0,0]
+                controlTraj['mpc_feas'] = controller.controllerList[aliasesSensorIdx.index(alias)].feasible
+                controlTraj['mpc_obj'] = controller.controllerList[aliasesSensorIdx.index(alias)].prob.objective.value
             outputs[alias].append(controlTraj)
 
             coordDict = {}
@@ -201,8 +189,8 @@ try:
         coord_out['gen'].append(genDict)
 
         logger.debug("Publishing values to other federates")
-        h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
         logger.debug(input_dicts)
+        h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
 except KeyboardInterrupt:
     print('Keyboard interrupt received. Stopping simulation and saving current data.')
 

@@ -9,6 +9,6 @@ imageio
 cvxpy
 scipy
 statsmodels
-opendss-wrapper @ git+https://github.com/natlabrockies/opendss-wrapper.git
+opendss-wrapper @ git+https://github.com/saltshaker/opendss-wrapper.git
 neuromancer @ git+https://github.com/saltshaker/neuromancer.git
 alfalfa-client @ git+https://github.com/saltshaker/alfalfa-client.git

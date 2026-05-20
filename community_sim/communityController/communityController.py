@@ -16,7 +16,10 @@ class CommunityController:
         dirName = os.path.dirname(__file__)
 
         self.controlAliasList = controlAliasList
-        self.nsteps = 60
+        if nstepsOverride is None:
+            self.nsteps = 60
+        else:
+            self.nsteps = nstepsOverride
         self.logger = logger
         self.testCase = testCase
 
@@ -95,7 +98,7 @@ class CommunityController:
             if self.testCase == 'DPC':
                 self.predictedLoad[i,:] = trajectories['horizon_u_tot'].detach().numpy()[0,:,0]
             elif self.testCase == 'MPC':
-                self.predictedLoad[i,:] = trajectories['u_hvac'][:,0]
+                self.predictedLoad[i,:] = trajectories['u_tot'][:,0]
             controlEvents.append(self.controllerList[i].controlEvents)
 
         self.coordDebug['gen'] = {}

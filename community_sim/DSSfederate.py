@@ -112,12 +112,12 @@ try:
         h.helicsFederateRequestTime(fed, present_step)
 
         # get signals from other federate
-        logger.debug(f"Current time: {current_time}, step: {step}")
+        logger.info(f"Current time: {current_time}, step: {step}")
         isupdated = h.helicsInputIsUpdated(subid['load_powers'])
         if isupdated == 1:
             loadPowers = h.helicsInputGetString(subid['load_powers'])
             loadPowers = json.loads(loadPowers)
-            logger.debug("Recieved updated value for load_powers")
+            logger.debug("Received updated value for load_powers")
             logger.debug(loadPowers)
         else:
             loadPowers = {}
@@ -126,7 +126,7 @@ try:
         if isupdated == 1:
             controlEvents = h.helicsInputGetString(subid['control_events'])
             controlEvents = json.loads(controlEvents)
-            logger.debug("Recieved updated value for control_events")
+            logger.debug("Received updated value for control_events")
             logger.debug(controlEvents)
         else:
             controlEvents = {}
@@ -141,6 +141,7 @@ try:
                 for key, value in controlSet['devices'].items():
                     if 'Battery' in key:
                         dss.set_power(key+location, element='Storage', p=value/2)
+                        logger.debug(f"{key+location} set to {value/2}")
                     else:
                         continue
 
@@ -162,7 +163,7 @@ try:
 
         battery_results.append(battery_data['kWhStored'].to_dict())
         battery_dispatch.append(battery_data['kW'].to_dict())
-        battery_power.append(dss.get_power('Battery4', element='Storage', total=True)[0])
+        battery_power.append(dss.get_power('Battery2', element='Storage', total=True)[0])
         battery_state.append(battery_data['State'].to_dict())
         
         # Get load data

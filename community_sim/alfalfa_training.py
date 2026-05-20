@@ -12,7 +12,7 @@ from communityController.buildingController.buildingController import BuildingCo
 controlInMap = { 'indoorAirTemp': 'living space Air Temperature'}
 controlOutMap = {'heatingSetpoint': 'heating setpoint', 'coolingSetpoint': 'cooling setpoint'}
 
-resultsDir = Path('results/summerExp')
+resultsDir = Path('results/noDeadband')
 
 def Main():
     # Create results folder if it doesn't exist
@@ -20,7 +20,7 @@ def Main():
         resultsDir.mkdir(parents=True)
 
     start_time = dt.datetime(2023, 7, 1)
-    duration = dt.timedelta(days=40)
+    duration = dt.timedelta(days=1)
     # first = True
     # for i in range(0,6):
     #     if i == 5:
@@ -63,7 +63,7 @@ def RunAlfalfa(start_time, duration, first):
     # Define parameters to run simulation
     # If you are using historian, you will need to search for this time period in Grafana dashboard to view results.
     stepsize = dt.timedelta(minutes=1)
-    warmup = dt.timedelta(minutes=30)
+    warmup = dt.timedelta(minutes=5)
     start_warmup = start_time - warmup
     end_time = start_time + duration
 
@@ -76,8 +76,9 @@ def RunAlfalfa(start_time, duration, first):
     }
 
     # Start simulations
-    for site in site_ids:
-        ac.start(site, **params)
+    # for site in site_ids:
+    #     ac.start(site, **params)
+    ac.start(site_ids, **params)
 
     # Run warmup
     print("Running warmup period")
@@ -95,7 +96,7 @@ def RunAlfalfa(start_time, duration, first):
     # Create controller object
     controllerList = []
     for alias in aliases:
-        controllerList.append(BuildingController(alias, None, train=True))
+        controllerList.append(BuildingController(id=alias, devices=None, runName=None, logger=None, train=True, testCase='Train'))
 
     # -----Execute Federate, set up and start co-simulation-----
     outputs = {alias: [] for alias in aliases}

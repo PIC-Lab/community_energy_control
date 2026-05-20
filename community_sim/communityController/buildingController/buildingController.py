@@ -51,7 +51,7 @@ class BuildingController:
         self.cl_system = None
 
         # Load building specific parameters
-        self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 0.5*3}      # Default value, should be commented out
+        self.setpointInfo = {"heatSP": 18.88888888888889, "coolSP": 24.444444444444443, "deadband": 0.5}      # Default value, should be commented out
         # Temporary, needs to be fixed later
         self.setpointSchedule = pd.read_csv(os.path.join(dirName, '../../setpointSchedule.csv')
                                             , header=None).to_numpy()[np.newaxis, :]
@@ -61,11 +61,14 @@ class BuildingController:
         self.socSchedule = pd.read_csv(os.path.join(dirName, 'thermal_node_model/socSchedule.csv')).to_numpy() * 16.4
 
         # Run additional setup functions
-        if testCase == 'DPC':
+        if self.testCase == 'DPC':
             if not(train):
                 self.LoadDPC(dirName)
-        elif testCase == 'MPC':
+        elif self.testCase == 'MPC':
             self.CreateMPC()
+            self.feasible = True
+        elif self.testCase == 'MPC_alt':
+            self.CreateMPC_alt()
             self.feasible = True
         self.count = 0
         self.HVAC_lock = 0
@@ -125,8 +128,12 @@ class BuildingController:
         self.PullSensorValues(sensorValues, coordinateSignals, currentTime)
 
         # Control functions
-        # trajectories = self.PredictiveControl()
-        trajectories = self.SimpleMPC(currentTime)
+        if self.testCase == 'DPC':
+            trajectories = self.PredictiveControl()
+        elif self.testCase == 'MPC':
+            trajectories = self.SimpleMPC(currentTime)
+        elif self.testCase == 'MPC_alt':
+            trajectories = self.SimpleMPC_alt(currentTime)
 
         # Push control signals to actuators
         if not(self.testCase == 'base'):
@@ -211,28 +218,32 @@ class BuildingController:
             'bat_min': np.ones((self.nsteps,1))*1.5,
             'bat_max': np.ones((self.nsteps,1))*15,
             'cost': BuildingController.TOUPricing(currentTime, self.nsteps)[:,np.newaxis],
-            'power_ref': np.ones((self.nsteps,1))*50
+            'power_ref': np.ones((self.nsteps,1))*50,
+            'bat_ref': self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')
         }
         if (currentMinutes >= 740) and (currentMinutes < 800):
-            self.horizonData['power_ref'] = np.ones((self.nsteps,1))*5
+            self.horizonData['power_ref'] = np.ones((self.nsteps,1))*1
 
         for key, param in self.prob.param_dict.items():
             param.value = self.horizonData[key]
 
-        self.prob.solve(solver='SCIP')
+        self.prob.solve(solver='gurobi')
         control_traj = self.prob.var_dict
 
-        if control_traj['u_hvac'].value is None:
+        # Now that controller has both heating and cooling, try removing the rule-based backup and see what it does
+        if control_traj['u_tot'].value is None:
             self.logger.warn(f"MPC optization failed for {self.buildingID}")
-            if self.sensorValues['indoorAirTemp'] < self.setpointSchedule[0,currentMinutes,0] - self.setpointInfo['deadband']:
-                control = np.ones(1)
-            elif self.sensorValues['indoorAirTemp'] > self.setpointSchedule[0,currentMinutes,0] + self.setpointInfo['deadband']:
-                control = np.ones(1) * -1
-            else:
-                control = np.zeros(1)
+            # if self.sensorValues['indoorAirTemp'] < self.setpointSchedule[0,currentMinutes,0] - self.setpointInfo['deadband']:
+            #     control = np.ones(1)
+            # elif self.sensorValues['indoorAirTemp'] > self.setpointSchedule[0,currentMinutes,0] + self.setpointInfo['deadband']:
+            #     control = np.ones(1) * -1
+            # else:
+            #     control = np.zeros(1)
+            control = np.zeros(1)
             self.feasible = False
         else:
-            control = control_traj['u_hvac'].value[0,0]
+            control = control_traj['u_heat'].value[0,0] - control_traj['u_cool'].value[0,0]
+            self.actuatorValues['battery'] = control_traj['u_bat'].value[0,0]
             self.feasible = True
 
         if self.HVAC_lock:
@@ -276,12 +287,91 @@ class BuildingController:
         for key, value in self.prob.param_dict.items():
             trajectories[key] = value.value
 
-        if control_traj['u_hvac'].value is None:
+        if control_traj['u_tot'].value is None:
             trajectories['y'] = self.horizonData['y0'][np.newaxis,:]
-            trajectories['u_hvac'] = control[np.newaxis,:]
+            trajectories['u_heat'] = np.clip(control[np.newaxis,:], 0, 1)
+            trajectories['u_cool'] = np.clip(control[np.newaxis,:]*-1, 0, 1)
             trajectories['stored'] = self.horizonData['stored0'][np.newaxis,:]
             trajectories['u_bat'] = np.zeros((self.nsteps,1))
-            trajectories['u_tot'] = trajectories['u_bat'] + np.abs(trajectories['u_hvac']) * 6
+            trajectories['u_tot'] = trajectories['u_bat'] + (trajectories['u_heat'] + trajectories['u_cool']) * 6
+        else:
+            for key, value in self.prob.var_dict.items():
+                trajectories[key] = value.value
+
+        return trajectories
+    
+    def SimpleMPC_alt(self, currentTime):
+        currentMinutes = currentTime.hour * 60 + currentTime.minute
+        
+        pos = self.weather.index.get_loc(currentTime)
+        d = self.weather['Site Outdoor Air Temperature'].iloc[pos:pos+self.nsteps].to_numpy()[:,np.newaxis]
+
+        self.horizonData = {
+            'y0': np.array([self.sensorValues['indoorAirTemp']]),
+            'y_min': self.setpointSchedule[0,currentMinutes:currentMinutes+self.nsteps,:] - self.setpointInfo['deadband'],
+            'y_max': self.setpointSchedule[0,currentMinutes:currentMinutes+self.nsteps,:] + self.setpointInfo['deadband'],
+            'd': d,
+            'stored0': np.array([self.sensorValues['batterySOC']]),
+            'bat_min': np.ones((self.nsteps,1))*2.0,
+            'bat_max': np.ones((self.nsteps,1))*15,
+            'cost': BuildingController.TOUPricing(currentTime, self.nsteps)[:,np.newaxis],
+            'power_ref': np.ones((self.nsteps,1))*50,
+            'bat_ref': self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps), axis=0, mode='wrap')
+        }
+        if (currentMinutes >= 740) and (currentMinutes < 800):
+            self.horizonData['power_ref'] = np.zeros((self.nsteps,1))
+
+        for key, param in self.prob.param_dict.items():
+            param.value = self.horizonData[key]
+
+        self.prob.solve(solver='gurobi')
+        control_traj = self.prob.var_dict
+
+        # Now that controller has both heating and cooling, try removing the rule-based backup and see what it does
+        # if control_traj['u_tot'].value is None:
+        if control_traj['u_cool'].value is None:
+            self.logger.warn(f"MPC optization failed for {self.buildingID}")
+            self.feasible = False
+        else:
+            # temp = 1/0.08 * ((control_traj['u_cool_sp'].value-control_traj['y'].value) + 1/(400)*control_traj['y'].value - 1/(400)*self.prob.param_dict['d'].value)
+            # self.logger.debug(f"{self.buildingID}: sp: {control_traj['u_cool_sp'].value[0,0]}, u: {control_traj['u_cool'].value[0,0]}, constraint: {temp[0,0]}")
+            # if (control_traj['u_cool_sp'].value[0,0] >= self.sensorValues['indoorAirTemp'] + 0.2) or (control_traj['u_cool_sp'].value[0,0] <= self.sensorValues['indoorAirTemp']):
+            # self.actuatorValues['coolingSetpoint'] = control_traj['u_cool_sp'].value[0,0]
+            # if (control_traj['u_cool'].value[0,0] > 0.01) or (self.count > 0):
+            if (control_traj['u_cool'].value[0,0] > 0.01) and (control_traj['y'].value[1,0] >= self.sensorValues['indoorAirTemp']):
+
+            # if (control_traj['u_cool'].value[0,0] > 0.01):
+                self.actuatorValues['coolingSetpoint'] = control_traj['y'].value[1,0]
+                # self.count += 1
+                # if self.count > 10:
+                #     self.count = 0
+            else:
+                self.actuatorValues['coolingSetpoint'] = control_traj['y'].value[1,0] + 1
+            if self.actuatorValues['coolingSetpoint'] <= 10:
+                self.actuatorValues['coolingSetpoint'] = 10
+            self.logger.debug(control_traj['u_cool'].value[:8,0])
+            self.logger.debug(control_traj['y'].value[:8,0])
+            self.actuatorValues['heatingSetpoint'] = 0
+            if (control_traj['u_bat'].value[0,0] < 0) and \
+            (self.sensorValues['batterySOC'] <= self.horizonData['bat_min'][0,0] + 0.05):
+                self.actuatorValues['battery'] = 0
+            else:
+                self.actuatorValues['battery'] = control_traj['u_bat'].value[0,0]
+            self.logger.debug(control_traj['u_bat'].value[:8,0])
+            self.logger.debug(control_traj['stored'].value[:8,0])
+            self.feasible = True
+
+        trajectories = {}
+        for key, value in self.prob.param_dict.items():
+            trajectories[key] = value.value
+
+        # if control_traj['u_tot'].value is None:
+        if control_traj['u_cool'].value is None:
+            trajectories['y'] = self.horizonData['y0'][np.newaxis,:]
+            trajectories['u_cool'] = np.zeros((self.nsteps,1))
+            trajectories['stored'] = self.horizonData['stored0'][np.newaxis,:]
+            trajectories['u_bat'] = np.zeros((self.nsteps,1))
+            trajectories['u_tot'] = trajectories['u_bat'] + trajectories['u_cool']
         else:
             for key, value in self.prob.var_dict.items():
                 trajectories[key] = value.value
@@ -393,7 +483,8 @@ class BuildingController:
         self.norm = Normalizer()         # type:ignore
         self.norm.load(manager.runPath+f'norm/{self.buildingID}/')
 
-        u_hvac = cp.Variable((self.nsteps_eff,1), integer=True, name='u_hvac')
+        u_heat = cp.Variable((self.nsteps_eff,1), boolean=True, name='u_heat')
+        u_cool = cp.Variable((self.nsteps_eff,1), boolean=True, name='u_cool')
         u_bat = cp.Variable((self.nsteps_eff,1), name='u_bat')
         u_tot = cp.Variable((self.nsteps_eff,1), name='u_tot')
         y = cp.Variable((self.nsteps_eff,1), name='y')
@@ -408,23 +499,102 @@ class BuildingController:
         batmax = cp.Parameter((self.nsteps_eff,1), name='bat_max')
         cost = cp.Parameter((self.nsteps_eff,1), name='cost')
         power_ref = cp.Parameter((self.nsteps_eff,1), name='power_ref')
+        bat_ref = cp.Parameter((self.nsteps_eff,1), name='bat_ref')
 
-        objective = cp.Minimize(1.0*cost.T@u_tot)
-        # objective = cp.Minimize(1.0*cost.T@u_hvac)
+        objective = cp.Minimize(1.0*cost.T@u_tot+10*cp.norm(y-ymin)+10*cp.norm(y-ymax))
 
-        constraints = [u_hvac >= -1, u_hvac <=0,
-                       y[1:] >= ymin[1:], y[1:] <= ymax[1:],
-                    #    y <= 30,
+        constraints = [
+                       u_cool + u_heat <= 1,
+                    #    y[1:] >= ymin[1:], y[1:] <= ymax[1:],
                        y[0] == y0,
-                       u_tot == u_hvac * -6 + u_bat,
-                       u_bat <= 9.6, u_bat >= u_hvac * 6,
+                       u_tot == (u_heat + u_cool) * 6 + u_bat,
+                       u_bat <= 9.6, u_bat >= (u_heat + u_cool) * -6,
                        stored[0] == stored0,
-                       stored >= batmin, stored <= batmax,
+                       stored >= batmin,
+                       stored <= batmax,
                        u_tot <= power_ref
                     ]
         for i in range(1, self.nsteps_eff):
-            constraints.append(y[i] == (-1/(RC)*y[i-1] + 1/(RC)*d[i-1] + alpha*u_hvac[i-1]*6)*self.step_mins + y[i-1])
-            constraints.append(stored[i] == stored[i-1] + u_bat[i] * self.step_mins / 60)
+            constraints.append(y[i] == (-1/(RC)*y[i-1] + 1/(RC)*d[i-1] + alpha*(u_heat[i-1]*6 + u_cool[i-1]*-6))*self.step_mins + y[i-1])
+            constraints.append(stored[i] == stored[i-1] + u_bat[i-1] * self.step_mins / 60)
+
+        self.prob = cp.Problem(objective, constraints)
+
+    def CreateMPC_alt(self):
+        RC = 400
+        alpha = 0.08
+
+        # with open('../thermal_rc_model/buildings_tuned.json') as fp:
+        #     buildingRC = json.load(fp)
+
+        # RC = buildingRC[self.buildingID]['RC']
+        # alpha = buildingRC[self.buildingID]['alpha']
+
+        manager = RunManager(self.runName, saveDir='deployModels')
+        manager.LoadRunJson(self.runName)
+
+        for key in manager.models.keys():
+            if key.find('buildingNODE') != -1:
+                thermalModelName = key
+            elif key.find('controller') != -1:
+                controllerModelName = key
+            else:
+                self.logger.warn(f"Building {self.buildingID}: Model name '{key}' does not meet expected naming conventions. Key will be ignored.")
+            
+        if self.nstepsOverride is None:
+            self.nsteps = manager.models[controllerModelName]['train_params']['nsteps']
+        else:
+            self.nsteps = self.nstepsOverride
+
+        self.nsteps_eff = int(self.nsteps / self.step_mins)
+
+        # outTemp = pd.read_csv('./results/basecase_week/1_out.csv', usecols=['Site Outdoor Air Temperature'])
+        # waterHeater = pd.read_csv(f'./results/basecase_week/{self.buildingID}_out.csv', usecols=['WaterSystems:Electricity'])
+        # self.dist = np.column_stack([outTemp.to_numpy(), waterHeater.to_numpy()])
+        # self.dist = np.tile(self.dist, (2,1))
+        # self.dist = self.dist[np.newaxis,:]
+
+        self.norm = Normalizer()         # type:ignore
+        self.norm.load(manager.runPath+f'norm/{self.buildingID}/')
+
+        u_cool = cp.Variable((self.nsteps_eff,1), name='u_cool')
+        u_bat = cp.Variable((self.nsteps_eff,1), name='u_bat')
+        u_tot = cp.Variable((self.nsteps_eff,1), name='u_tot')
+        y = cp.Variable((self.nsteps_eff,1), name='y')
+        stored = cp.Variable((self.nsteps_eff,1), name='stored')
+
+        y0 = cp.Parameter((1), name='y0')
+        ymax = cp.Parameter((self.nsteps_eff,1), name='y_max')
+        ymin = cp.Parameter((self.nsteps_eff,1), name='y_min')
+        d = cp.Parameter((self.nsteps_eff,1), name='d')
+        stored0 = cp.Parameter((1), name='stored0')
+        batmin = cp.Parameter((self.nsteps_eff,1), name='bat_min')
+        batmax = cp.Parameter((self.nsteps_eff,1), name='bat_max')
+        cost = cp.Parameter((self.nsteps_eff,1), name='cost')
+        power_ref = cp.Parameter((self.nsteps_eff,1), name='power_ref')
+        bat_ref = cp.Parameter((self.nsteps_eff,1), name='bat_ref')
+
+        objective = cp.Minimize(
+                        1.0*cost.T@u_tot
+                        +1.0*np.ones(self.nsteps_eff-1)@cp.power(cp.diff(u_cool),2)
+                        +0.1*cp.norm(u_cool)
+                        +0.5*np.ones(self.nsteps_eff)@cp.neg(stored-bat_ref)
+                        )
+
+        constraints = [y[0] == y0,
+                    y[1:] <= ymax[1:],
+                       u_tot == u_cool + u_bat,
+                       u_bat <= 9.6, u_bat >= -u_cool,
+                       stored[0] == stored0,
+                       stored[1:] >= batmin[1:],
+                       stored[1:] <= batmax[1:],
+                       u_tot <= power_ref,
+                       u_cool >= 0,
+                       u_cool <= 10,
+                    ]
+        for i in range(1, self.nsteps_eff):
+            constraints.append(y[i] + 0.5 == (-1/(RC)*y[i-1] + 1/(RC)*d[i-1] + alpha*-u_cool[i-1])*self.step_mins + y[i-1])
+            constraints.append(stored[i] == stored[i-1] + u_bat[i-1] * self.step_mins / 60)
 
         self.prob = cp.Problem(objective, constraints)
 

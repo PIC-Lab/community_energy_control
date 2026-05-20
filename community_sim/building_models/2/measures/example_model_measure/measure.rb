@@ -42,7 +42,7 @@ class ExampleModelMeasure < OpenStudio::Measure::ModelMeasure
     thermostats = model.getThermostats
     thermostats.each do |thermostat|
       dualSetpoint = thermostat.thermalZone.get.thermostatSetpointDualSetpoint.get
-      dualSetpoint.setTemperatureDifferenceBetweenCutoutAndSetpoint(1.0)
+      dualSetpoint.setTemperatureDifferenceBetweenCutoutAndSetpoint(0.5)
     end
 
     # Water heater
