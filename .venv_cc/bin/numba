@@ -1,8 +1,0 @@
-#!/home/picstudent/Documents/psalter/Leadville/leadville_community/.venv_cc/bin/python3.11
-# -*- coding: UTF-8 -*-
-from __future__ import print_function, division, absolute_import
-
-from numba.misc.numba_entry import main
-
-if __name__ == "__main__":
-    main()
