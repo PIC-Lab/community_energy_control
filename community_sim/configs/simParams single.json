@@ -1,0 +1,17 @@
+{
+    "start": "07/01/24 00:00",
+    "step": "1m",
+    "duration": "2d",
+    "warmup": "5m",
+    "testCase": "MPC_alt",
+    "controlledAliases": ["2"],
+    "logLevel": "INFO",
+    "resultLevel": "ROLLOUT",
+    "resultsDir": "results/setpointControl_30/",
+    "controllerRun": "return_7",
+    "nstepsOverride": 180,
+    "nstepsBuilding": 60,
+    "controlledLoads": ["hvac", "battery"],
+    "batCoveredLoads": ["base", "waterHeater", "hvac"],
+    "batDischargeMode": "loadFollow"
+}

@@ -10,6 +10,7 @@ from scipy import stats
 from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
+import os
 
 # import sys
 # sys.path.insert(1, '../buildingController')
@@ -23,7 +24,7 @@ class FlexibilityMetricPredictor:
     '''
     '''
 
-    def __init__(self, id, runName):
+    def __init__(self, id, nsteps, stepSize, runName, logger):
         '''
         Constructor
 
@@ -31,24 +32,35 @@ class FlexibilityMetricPredictor:
         :param runName: (str) name of saved training run to load the thermal model from
         '''
         self.buildingID = id
+        self.nsteps = nsteps
+        self.stepSize = stepSize
         self.runName = runName
+        self.logger = logger
 
         self.energyFlex = []
+        self.flexBounds = np.ones((nsteps,2))
 
-        self.nsteps = 4*60
+        self.LoadPredictor()
+
+    def Step(self, currentTime):
+        currentMinutes = int((currentTime.hour * 60 + currentTime.minute) / self.stepSize)
+
+        self.PredictMetrics(currentMinutes)
 
     def LoadPredictor(self):
         '''
         '''
         self.LoadBoundsModel()
 
-        self.LoadEnergyModel()
+        # self.LoadEnergyModel()
         
     def LoadBoundsModel(self):
         '''
         '''
-        self.model = sm.load('arima.pickle')
-
+        dirName = os.path.dirname(__file__)
+        # self.model = sm.load('arima.pickle')
+        self.upperBound = pd.read_csv(os.path.join(dirName, '../../sim_schedules/upperBound.csv'), usecols=[self.buildingID]).values
+        
     def LoadEnergyModel(self):
         '''
         '''
@@ -221,17 +233,18 @@ class FlexibilityMetricPredictor:
         self.test_df[['High Envelope (kW)', 'forecast']].plot(ax=ax)
         fig.savefig('Saved Figures/forecast.png')
 
-    def PredictMetrics(self):
+    def PredictMetrics(self, currentMinutes):
         '''
         '''
-        self.PredictBounds()
+        self.PredictBounds(currentMinutes)
 
-        self.PredictEnergy()
+        # self.PredictEnergy()
 
-    def PredictBounds(self):
+    def PredictBounds(self, currentMinutes):
         '''
         '''
-        pass
+        self.flexBounds[:,0] = np.zeros(self.nsteps)
+        self.flexBounds[:,1] = self.upperBound[currentMinutes:currentMinutes+self.nsteps,0]
 
     def PredictEnergy(self, states, inputs, disturbances):
         '''

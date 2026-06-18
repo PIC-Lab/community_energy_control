@@ -1,6 +1,6 @@
 {
   "coreType": "zmq",
-  "loglevel": "data",
+  "loglevel": "warning",
   "name": "DSSfederate",
   "terminate_on_error": true,
   "publications": [
@@ -16,6 +16,13 @@
       "global": false,
       "key": "load_powers",
       "target": "load_powers",
+      "required": true,
+      "type": "String"
+    },
+    {
+      "global": false,
+      "key": "bat_cover",
+      "target": "bat_cover",
       "required": true,
       "type": "String"
     },

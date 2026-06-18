@@ -1,4 +1,4 @@
-#!/home/psalter/Documents/Leadville/leadville_community/.venv_cc/bin/python
+#!/home/picstudent/Documents/psalter/Leadville/leadville_community/.venv_cc/bin/python3.11
 # -*- coding: utf-8 -*-
 import re
 import sys

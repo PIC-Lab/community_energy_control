@@ -14,6 +14,9 @@ initTime = dt.datetime.now()
 with open('configs/simParams.json') as fp:
     simParams = json.load(fp)
 
+with open('communityController/coordinator/transInfo.json') as fp:
+    transInfo = json.load(fp)
+
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S')
@@ -30,6 +33,10 @@ ModelDir = os.path.join(MainDir, 'network_model')
 BuildingDir = os.path.join(MainDir, 'building_models')
 ResultsDir = os.path.join(MainDir, simParams['resultsDir'])
 os.makedirs(ResultsDir, exist_ok=True)
+
+if simParams['resultLevel']== 'ROLLOUT':
+    ExtrasDir = os.path.join(MainDir, simParams['resultsDir']+'/extra/')
+    os.makedirs(ExtrasDir, exist_ok=True)
 
 with open('configs/indexMapping.json') as fp:
     sensorIdxMapping = json.load(fp)        # Map sensor indices to simulation indices
@@ -78,9 +85,34 @@ duration = pd.Timedelta(simParams['duration'])
 end_time = start_time + duration
 logger.info(f"Run period: {start_time} to {end_time}")
 
+# base_load_data = pd.read_csv('sim_schedules/base_load.csv')
+base_load_data = pd.read_csv('sim_schedules/base_load_ws.csv')
+base_load = base_load_data.loc[:,simParams['controlledAliases']].rename(simIdxMapping, axis=1)
+logger.debug(f"base_load: {base_load.columns}")
+
+trans_base_load = np.zeros((len(transInfo), int(base_load_data.shape[0] / simParams['stepSizeCoord'])))
+i = 0
+for key, value in transInfo.items():
+    trans_idx = [x for x in value['SimBuildings'] if x not in simParams['controlledAliases']]
+    logger.debug(f"{key}: {trans_idx}")
+    temp = base_load_data.loc[:,trans_idx].sum(axis=1)
+    trans_base_load[i,:] = temp.values.reshape(int(temp.shape[0] / simParams['stepSizeCoord']),simParams['stepSizeCoord']).mean(axis=1)
+    i += 1
+logger.debug(f"trans_base_load shape: {trans_base_load.shape}")
+
 # ----- Control setup -----
 aliasesSensorIdx = [simIdxMapping[alias] for alias in simParams['controlledAliases']]       # Convert list of controlled buildings from sim idx to sensor idx
-controller = CommunityController(aliasesSensorIdx, simParams['controllerRun'], logger, simParams['testCase'], simParams['nstepsOverride'])
+controller = CommunityController(controlAliasList=aliasesSensorIdx,
+                                 runName=simParams['controllerRun'],
+                                 logger=logger,
+                                 baseLoad=base_load,
+                                 testCase=simParams['testCase'],
+                                 deploy=False,
+                                 nstepsCoord=simParams['nstepsCoord'],
+                                 stepSizeCoord=simParams['stepSizeCoord'],
+                                 nstepsBuild=simParams['nstepsBuild'],
+                                 stepSizeBuild=simParams['stepSizeBuild'])
+controller.baseTransLoad = trans_base_load
 
 # ----- Primary co-simulation loop -----
 # Define lists for data collection
@@ -88,16 +120,29 @@ outputs = {alias: [] for alias in aliasesSensorIdx}
 coord_out = {alias: [] for alias in aliasesSensorIdx}
 coord_out['gen'] = []
 
+if simParams['resultLevel'] == 'ROLLOUT':
+    tempRollout = {key: [] for key in aliasesSensorIdx}
+    hvacRollout = {key: [] for key in aliasesSensorIdx}
+    batPowerRollout = {key: [] for key in aliasesSensorIdx}
+    batSOCRollout = {key: [] for key in aliasesSensorIdx}
+    flexLoadRollout = {key: [] for key in aliasesSensorIdx}
+    predLoadRollout = {key: [] for key in aliasesSensorIdx}
+    usageRollout = {key: [] for key in aliasesSensorIdx}
+    predTransRollout = {str(i+1): [] for i in range(0,len(transInfo.keys()))}
+
 # Execute federate and start co-sim
+logger.debug("Before federate execute")
 first = True
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
+stepTime = []
 try:
     for step, current_time in enumerate(times):
         # Update time in co-simulation
         present_step = (current_time - start_time).total_seconds()
         present_step += 1
         h.helicsFederateRequestTime(fed, present_step)
+        stepStart = dt.datetime.now()
 
         # get signals from other federate
         logger.info(f"Current time: {current_time}, step: {step}")
@@ -119,6 +164,7 @@ try:
         else:
             indoorTemp = {}
         
+        logger.debug("Updating sensor values")
         sensorValues = {alias: {} for alias in aliasesSensorIdx}
         for key, value in batterySOC.items():
             try:
@@ -131,9 +177,11 @@ try:
 
         logger.debug(sensorValues)
 
+        logger.debug("Controller step")
         controlEvents = controller.Step(sensorValues, current_time)
 
         # Map actuator values to control event format
+        logger.debug("Updating input_dict")
         input_dicts = []
         for event in controlEvents:
             tempDict = {}
@@ -143,6 +191,7 @@ try:
                 tempDict['devices'][value] = event['devices'][key]
             input_dicts.append(tempDict)
 
+        logger.debug("Performing data collection")
         for alias in aliasesSensorIdx:
             # if first:
             #     predictedTraj = {}
@@ -167,13 +216,14 @@ try:
                 controlTraj['hvac_mode'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_mode
                 controlTraj['hvac_lock'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_lock
             elif simParams['testCase'] == 'MPC_alt':
-                names = ['u_cool', 'u_cool_sp', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref']
+                names = ['u_hvac', 'u_bat', 'u_load', 'u_tot', 'y', 'y_ref', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref', 'charge_incen', 'base_load']
                 for key in names:
                     if not(key in controller.trajectoryList[alias].keys()):
                         continue
                     controlTraj[key] = controller.trajectoryList[alias][key][0,0]
                 controlTraj['mpc_feas'] = controller.controllerList[aliasesSensorIdx.index(alias)].feasible
                 controlTraj['mpc_obj'] = controller.controllerList[aliasesSensorIdx.index(alias)].prob.objective.value
+                controlTraj['hvac_mode'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_mode
             outputs[alias].append(controlTraj)
 
             coordDict = {}
@@ -182,15 +232,37 @@ try:
                 coordDict[key] = value[0]
             coord_out[alias].append(coordDict)
 
+            if simParams['resultLevel'] == 'ROLLOUT':
+                # logger.debug("Performing rollout data collection")
+                if controller.trajectoryList[alias]['y'][:,0].shape[0] == 1:
+                    ic = controller.trajectoryList[alias]['y'][0,0]
+                    tempRollout[alias].append(np.ones_like(controller.trajectoryList[alias]['u_hvac'][:,0]) * ic)
+                else:
+                    tempRollout[alias].append(controller.trajectoryList[alias]['y'][:,0])
+                hvacRollout[alias].append(controller.trajectoryList[alias]['u_hvac'][:,0])
+                batPowerRollout[alias].append(controller.trajectoryList[alias]['u_bat'][:,0])
+                if controller.trajectoryList[alias]['stored'][:,0].shape[0] == 1:
+                    ic = controller.trajectoryList[alias]['stored'][0,0]
+                    batSOCRollout[alias].append(np.ones_like(controller.trajectoryList[alias]['u_bat'][:,0]) * ic)
+                else:
+                    batSOCRollout[alias].append(controller.trajectoryList[alias]['stored'][:,0])
+                flexLoadRollout[alias].append(controller.coordDebug[alias]['flexLoad'])
+                usageRollout[alias].append(controller.coordDebug[alias]['usagePenalty'])
+
         genDict = {}
         genDict['Time'] = current_time
         for key, value in controller.coordDebug['gen'].items():
             genDict[key] = value[0]
         coord_out['gen'].append(genDict)
 
+        if simParams['resultLevel'] == 'ROLLOUT':
+            for i in range(0, len(transInfo.keys())):
+                predTransRollout[str(i+1)].append(controller.coordDebug['gen'][f"trans{i+1} base load"] + controller.coordDebug['gen'][f"trans{i+1} building load"])
+
         logger.debug("Publishing values to other federates")
         logger.debug(input_dicts)
         h.helicsPublicationPublishString(pubid['control_events'], json.dumps(input_dicts))
+        stepTime.append(dt.datetime.now() - stepStart)
 except KeyboardInterrupt:
     print('Keyboard interrupt received. Stopping simulation and saving current data.')
 
@@ -221,6 +293,26 @@ for i, building in enumerate(outputs_df):
 for i, building in enumerate(coord_df):
     building.to_csv(ResultsDir+simParams['controlledAliases'][i]+'_coord.csv', index=False)
 
+if simParams['resultLevel'] == 'ROLLOUT':
+    extras = [tempRollout, hvacRollout, batPowerRollout, batSOCRollout, flexLoadRollout, predLoadRollout, usageRollout]
+    extraNames = ['temp', 'hvac', 'batPow', 'batSOC', 'flexLoad', 'predLoad', 'usage']
+    i = 0
+    for rollout in extras:
+        for key, value in rollout.items():
+            # print(f"{key}: {len(value)}, {len(value[0])}, {len(value[1])}, {len(value[-2])}, {len(value[-1])}")
+            np.savetxt(ExtrasDir+sensorIdxMapping[key]+'_'+extraNames[i]+'.csv', np.array(rollout[key][:-1]), delimiter=',')
+        i += 1
+    for key, value in predTransRollout.items():
+        np.savetxt(ExtrasDir+f'trans{key}_predLoad.csv', np.array(value), delimiter=',')
+
 # finalize and close the federate
 h.helicsFederateDestroy(fed)
 h.helicsCloseLibrary()
+
+elapsedTime = dt.datetime.now() - initTime
+
+with open(ResultsDir+'simTime.txt', 'w') as fp:
+    fp.write(f"Finished at {dt.datetime.now()}. Simulation took {elapsedTime}.\nAverage sim step time: {np.mean(stepTime)}")
+
+logger.info(f"Finished at {dt.datetime.now()}. Simulation took {elapsedTime}.")
+logger.info(f"Average sim step time: {np.mean(stepTime)}. Median: {np.median(stepTime)}")

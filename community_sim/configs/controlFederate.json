@@ -1,6 +1,6 @@
 {
     "coreType": "zmq",
-    "loglevel": "data",
+    "loglevel": "warning",
     "name": "controlFederate",
     "terminate_on_error": true,
     "publications": [

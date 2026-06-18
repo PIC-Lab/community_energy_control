@@ -1,0 +1,43 @@
+{
+    "start": "07/01/24 00:00",
+    "step": "1m",
+    "duration": "14D",
+    "warmup": "5m",
+    "testCase": "MPC_alt",
+    "controlledAliases": [
+        "2",
+        "3",
+        "4",
+        "5",
+        "9",
+        "10",
+        "12",
+        "15",
+        "17",
+        "22",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28"
+    ],
+    "logLevel": "INFO",
+    "resultLevel": "ROLLOUT",
+    "resultsDir": "results/batch_1/",
+    "controllerRun": "return_7",
+    "nstepsCoord": 240,
+    "nstepsBuilding": 60,
+    "controlledLoads": [
+        "hvac",
+        "battery"
+    ],
+    "batCoveredLoads": [
+        "base",
+        "waterHeater",
+        "hvac"
+    ],
+    "batDischargeMode": "loadFollow",
+    "notes": "Trying to debug while full winter sim was very fucking slow",
+    "resultsLevel": "NORMAL",
+    "nstepsOverride": 240
+}

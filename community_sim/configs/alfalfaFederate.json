@@ -1,12 +1,18 @@
 {
   "coreType": "zmq",
-  "loglevel": "data",
+  "loglevel": "warning",
   "name": "alfalfaFederate",
   "terminate_on_error": true,
   "publications": [
     {
       "global": true,
       "key": "load_powers",
+      "required": true,
+      "type": "String"
+    },
+    {
+      "global": true,
+      "key": "bat_cover",
       "required": true,
       "type": "String"
     },

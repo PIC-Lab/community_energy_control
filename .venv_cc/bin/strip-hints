@@ -1,8 +1,6 @@
-#!/home/psalter/Documents/Leadville/leadville_community/.venv_cc/bin/python
-# -*- coding: utf-8 -*-
-import re
+#!/home/picstudent/Documents/psalter/Leadville/leadville_community/.venv_cc/bin/python3.11
 import sys
 from strip_hints.strip_hints_main import process_command_line
 if __name__ == '__main__':
-    sys.argv[0] = re.sub(r'(-script\.pyw|\.exe)?$', '', sys.argv[0])
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
     sys.exit(process_command_line())

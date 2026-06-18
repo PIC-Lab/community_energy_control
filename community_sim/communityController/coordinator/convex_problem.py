@@ -1,4 +1,5 @@
 import cvxpy as cp
+import numpy as np
 from abc import abstractmethod, ABC
 
 class ConvexProblem(ABC):
@@ -11,6 +12,7 @@ class ConvexProblem(ABC):
         Constructor
         '''
         self.prob = None
+        self.feasible = True
 
     def GetVariableNames(self):
         '''
@@ -45,7 +47,12 @@ class ConvexProblem(ABC):
             print(f'Parameter {key} recieved shape {value.shape} instead of {self.prob.param_dict[key].shape}')
             print(e)
 
-        result = self.prob.solve(verbose=verbose, solver=cp.CLARABEL)
+        result = None
+        try:
+            result = self.prob.solve(verbose=verbose, solver='clarabel')
+        except cp.SolverError:
+            print("A solver error has occurred")
+        self.feasible = not((result is None) or (result == np.inf))
         return result
 
     def FindVariableByName(self, name):

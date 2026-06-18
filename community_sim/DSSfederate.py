@@ -4,6 +4,7 @@ import pandas as pd
 import helics as h
 import json
 import logging
+import numpy as np
 from opendss_wrapper import OpenDSS
 
 initTime = dt.datetime.now()
@@ -11,8 +12,12 @@ initTime = dt.datetime.now()
 with open('configs/simParams.json') as fp:
     simParams = json.load(fp)
 
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S')
+
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
+# logger.addHandler(logging.StreamHandler())
 logger.setLevel(simParams['logLevel'])
 
 logger.info("----- OpenDSS Federate Logs -----")
@@ -101,15 +106,17 @@ battery_power = []
 battery_state = []
 
 # Execute federate and start co-sim
+logger.debug("Before federate execute")
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
+stepTime = []
 try:
     for step, current_time in enumerate(times):
-
         # Update time in co-simulation
         present_step = (current_time - start_time).total_seconds()
         present_step += 1  # Ensures other federates update before DSS federate
         h.helicsFederateRequestTime(fed, present_step)
+        stepStart = dt.datetime.now()
 
         # get signals from other federate
         logger.info(f"Current time: {current_time}, step: {step}")
@@ -122,6 +129,15 @@ try:
         else:
             loadPowers = {}
 
+        isupdated = h.helicsInputIsUpdated(subid['bat_cover'])
+        if isupdated == 1:
+            batCoverPowers = h.helicsInputGetString(subid['bat_cover'])
+            batCoverPowers = json.loads(batCoverPowers)
+            logger.debug("Received updated value for bat_cover")
+            logger.debug(batCoverPowers)
+        else:
+            batCoverPowers = {}
+
         isupdated = h.helicsInputIsUpdated(subid['control_events'])
         if isupdated == 1:
             controlEvents = h.helicsInputGetString(subid['control_events'])
@@ -132,20 +148,36 @@ try:
             controlEvents = {}
 
         # load
+        logger.debug("Setting bus loads")
         for loadName, set_point in loadPowers.items():
             dss.set_power(loadName, element='Load', p=set_point)
 
         # Battery control
+        logger.debug("Setting battery values")
         for controlSet in controlEvents:
-                location = controlSet['location']
-                for key, value in controlSet['devices'].items():
-                    if 'Battery' in key:
-                        dss.set_power(key+location, element='Storage', p=value/2)
-                        logger.debug(f"{key+location} set to {value/2}")
+            location = controlSet['location']
+            for key, value in controlSet['devices'].items():
+                if 'Battery' in key:
+                    if np.abs(value) < 0.01:
+                        batpow = 0
                     else:
-                        continue
+                        if value > 0:
+                            batpow = value/2
+                        else:
+                            if simParams['batDischargeMode'] == "bulk":
+                                batpow = value/2
+                            elif simParams['batDischargeMode'] == "loadFollow":
+                                batpow = batCoverPowers[location]*-1
+                            else:
+                                batpow = 0
+                        
+                    dss.set_power(key+location, element='Storage', p=batpow)
+                    # logger.debug(f"{key+location} set to {batpow}")
+                else:
+                    continue
 
         # solve OpenDSS network model
+        logger.debug("DSS step")
         dss.run_dss()
 
         # Publish battery results
@@ -171,6 +203,7 @@ try:
         for loadName in loadPowers:
             load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})
         load_powers_results.append(load_powers_data)
+        stepTime.append(dt.datetime.now() - stepStart)
 
 except KeyboardInterrupt:
     print('Keyboard interrupt received. Stopping simulation and saving current data.')
@@ -187,3 +220,11 @@ pd.DataFrame(battery_state).to_csv(battery_state_file)
 # finalize and close the federate
 h.helicsFederateDestroy(fed)
 h.helicsCloseLibrary()
+
+elapsedTime = dt.datetime.now() - initTime
+
+# with open(ResultsDir+'simTime.txt', 'w') as fp:
+#     fp.write(f"Finished at {dt.datetime.now()}. Simulation took {elapsedTime}.\nAverage sim step time: {np.mean(stepTime)}")
+
+logger.info(f"Finished at {dt.datetime.now()}. Simulation took {elapsedTime}.")
+logger.info(f"Average sim step time: {np.mean(stepTime)}. Median: {np.median(stepTime)}")

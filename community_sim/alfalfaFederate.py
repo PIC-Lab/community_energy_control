@@ -126,10 +126,14 @@ for site in site_ids:
     logger.debug(f"{site} inputs:")
     logger.debug(ac.get_inputs(site))
 
+with open("configs/buildingSetpoints.json") as fp:
+    buildingSetpoints = json.load(fp)
+
 # Create input dictionary and set initial inputs
 input_dicts = {}
 for alias in aliases:
-    input_dicts[alias] = {'heating setpoint': 21, 'cooling setpoint': 24}
+    # input_dicts[alias] = {'heating setpoint': 21, 'cooling setpoint': 24}
+    input_dicts[alias] = buildingSetpoints[alias]
     ac.set_inputs(ac.get_alias(alias), input_dicts[alias])
 
 # Create results folder if it doesn't exist
@@ -142,13 +146,16 @@ if not(resultsDir.exists()):
 outputs = {alias: [] for alias in aliases}
 
 # Execute federate and start co-sim
+logger.debug("Before federate execute")
 h.helicsFederateEnterExecutingMode(fed)
 times = pd.date_range(start_time, freq=stepsize, end=end_time)
+stepTime = []
 try:
     for step, current_time in enumerate(times):
         # Update time in co-simulation
         present_step = (current_time - start_time).total_seconds()
         h.helicsFederateRequestTime(fed, present_step)
+        stepStart = dt.datetime.now()
 
         # get signals from other federate
         logger.info(f"Current time: {current_time}, step: {step}")
@@ -156,13 +163,15 @@ try:
         if isupdated == 1:
             controlEvents = h.helicsInputGetString(subid['control_events'])
             controlEvents = json.loads(controlEvents)
-            logger.debug("Recieved updated value for control_events")
+            logger.debug("Received updated value for control_events")
             logger.debug(controlEvents)
         else:
             controlEvents = {}
                 
         # Get building electricity consumption
+        logger.debug("Looping through aliases")
         loadPowers = {}
+        batFollowPowers = {}
         indoorTemp = {}
         for i,alias in enumerate(aliases):
             site = ac.get_alias(alias)
@@ -190,12 +199,25 @@ try:
             alf_outs['Electricity:HVAC'] *= 1e-3 / 60
             outputs[alias].append(alf_outs)
 
+            batFollow = alf_outs['Whole Building Electricity']
+            if not("base" in simParams["batCoveredLoads"]):
+                baseLoad = alf_outs['Whole Building Electricity'] - alf_outs["WaterSystems:Electricity"] - alf_outs["Heating:Electricity"]
+                batFollow -= baseLoad
+            if not("waterHeater" in simParams["batCoveredLoads"]):
+                batFollow -= alf_outs["WaterSystems:Electricity"]
+            if not("hvac" in simParams["batCoveredLoads"]):
+                batFollow -= alf_outs["Heating:Electricity"]
+
             loadPowers[alias] = alf_outs['Whole Building Electricity']
+            batFollowPowers[alias] = batFollow
             indoorTemp[alias] = alf_outs['living space Air Temperature']
+
+            
 
         # Publish values
         logger.debug("Publishing values to other federates")
         h.helicsPublicationPublishString(pubid['load_powers'], json.dumps(loadPowers))
+        h.helicsPublicationPublishString(pubid['bat_cover'], json.dumps(batFollowPowers))
         h.helicsPublicationPublishString(pubid['indoor_temp'], json.dumps(indoorTemp))
 
         logger.debug(loadPowers)
@@ -205,6 +227,7 @@ try:
         if step < duration / stepsize:          # Don't advance alfalfa on the last iteration of the loop
             ac.advance(site_ids)
             logger.info(f"Model advanced to time: {ac.get_sim_time(site_ids[0])}")
+        stepTime.append(dt.datetime.now() - stepStart)
 except KeyboardInterrupt:
     print('Keyboard interrupt received. Stopping simulation and saving current data.')
 
@@ -231,3 +254,11 @@ aggregate_df.to_csv(ResultsDir+'aggregate_out.csv', index=False)
 # finalize and close the federate
 h.helicsFederateDestroy(fed)
 h.helicsCloseLibrary()
+
+elapsedTime = dt.datetime.now() - initTime
+
+# with open(ResultsDir+'simTime.txt', 'w') as fp:
+#     fp.write(f"Finished at {dt.datetime.now()}. Simulation took {elapsedTime}.\nAverage sim step time: {np.mean(stepTime)}")
+
+logger.info(f"Finished at {dt.datetime.now()}. Simulation took {elapsedTime}.")
+logger.info(f"Average sim step time: {np.mean(stepTime)}. Median: {np.median(stepTime)}")
