@@ -60,6 +60,7 @@ class FlexibilityMetricPredictor:
         dirName = os.path.dirname(__file__)
         # self.model = sm.load('arima.pickle')
         self.upperBound = pd.read_csv(os.path.join(dirName, '../../sim_schedules/upperBound.csv'), usecols=[self.buildingID]).values
+        self.upperBound = self.upperBound.reshape(int(self.upperBound.shape[0]/self.stepSize),self.stepSize).mean(axis=1)
         
     def LoadEnergyModel(self):
         '''
@@ -244,7 +245,7 @@ class FlexibilityMetricPredictor:
         '''
         '''
         self.flexBounds[:,0] = np.zeros(self.nsteps)
-        self.flexBounds[:,1] = self.upperBound[currentMinutes:currentMinutes+self.nsteps,0]
+        self.flexBounds[:,1] = self.upperBound[currentMinutes:currentMinutes+self.nsteps]
 
     def PredictEnergy(self, states, inputs, disturbances):
         '''
