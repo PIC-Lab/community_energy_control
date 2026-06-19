@@ -219,7 +219,7 @@ try:
                 controlTraj['hvac_mode'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_mode
                 controlTraj['hvac_lock'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_lock
             elif simParams['testCase'] == 'MPC_alt':
-                names = ['u_hvac', 'u_bat', 'u_load', 'u_tot', 'y', 'y_ref', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref', 'charge_incen', 'base_load']
+                names = ['u_hvac', 'u_hvac_shift', 'u_bat', 'u_bat_hvac', 'u_load', 'u_tot', 'y', 'y_ref', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref', 'charge_incen', 'base_load']
                 for key in names:
                     if not(key in controller.trajectoryList[alias].keys()):
                         continue
@@ -260,7 +260,7 @@ try:
 
         if simParams['resultLevel'] == 'ROLLOUT':
             for i in range(0, len(transInfo.keys())):
-                predTransRollout[str(i+1)].append(controller.coordDebug['gen'][f"trans{i+1} base load"] + controller.coordDebug['gen'][f"trans{i+1} building load"])
+                predTransRollout[str(i+1)].append(controller.coordDebug['gen'][f"trans{i+1} base load"] + controller.coordDebug['gen'][f"trans{i+1} pred load"])
 
         logger.debug("Publishing values to other federates")
         logger.debug(input_dicts)

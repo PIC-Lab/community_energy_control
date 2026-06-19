@@ -46,6 +46,8 @@ class BuildingController:
 
         # HVAC Values
         self.HVAC_mode = 0
+        self.hvac_offset = 3
+        self.hvac_prev = 0
 
         # Battery Values
         self.batSize = 16.4
@@ -141,6 +143,7 @@ class BuildingController:
             self.horizonData = {
                 'y0': np.array([self.sensorValues['indoorAirTemp']]),
                 'd': d,
+                'hvac_prev': np.ones((self.hvac_offset,1))*self.hvac_prev,
                 'stored0': np.array([self.sensorValues['batterySOC']]),
                 'bat_min': np.ones((self.nsteps_eff,1))*0.1*self.batSize,
                 'bat_max': np.ones((self.nsteps_eff,1))*15,
@@ -175,23 +178,13 @@ class BuildingController:
         # Pull data from sensors
         self.PullSensorValues(sensorValues, coordinateSignals, currentTime)
 
-        # pos = self.weather.index.get_loc(currentTime)
-        # d = self.weather['Site Outdoor Air Temperature'].iloc[pos:pos+self.nsteps_eff].to_numpy()[:,np.newaxis]
-        # if np.any(d <= 10):
-        #     self.HVAC_mode = 3
-        # elif np.any(d >= 27):
-        #     self.HVAC_mode = 1
-        # else:
-        #     # self.HVAC_mode = 0
-        #     self.HVAC_mode = 1
-
         # Control functions
         if self.testCase == 'DPC':
             trajectories = self.PredictiveControl()
         elif self.testCase == 'MPC':
             trajectories = self.SimpleMPC(currentTime)
         elif self.testCase == 'MPC_alt':
-            trajectories = self.SimpleMPC_alt(currentTime, coordinateSignals)
+            trajectories = self.SimpleMPC_alt()
 
         # Push control signals to actuators
         if not(self.testCase == 'base'):
@@ -261,25 +254,7 @@ class BuildingController:
         
         return self.norm.denorm(trajectories, keys=normDict)
     
-    def SimpleMPC_alt(self, currentTime, coordinateSignals):
-        # currentMinutes = int((currentTime.hour * 60 + currentTime.minute) / self.step_mins)
-        
-        # pos = self.weather.index.get_loc(currentTime)
-        # d = self.weather['Site Outdoor Air Temperature'].iloc[pos:pos+self.nsteps_eff].to_numpy()[:,np.newaxis]
-
-        # self.horizonData = {
-        #     'y0': np.array([self.sensorValues['indoorAirTemp']]),
-        #     'd': d,
-        #     'stored0': np.array([self.sensorValues['batterySOC']]),
-        #     'bat_min': np.ones((self.nsteps_eff,1))*2.0,
-        #     'bat_max': np.ones((self.nsteps_eff,1))*15,
-        #     'cost': BuildingController.TOUPricing(currentTime, self.nsteps_eff)[:,np.newaxis],
-        #     # 'power_ref': self.power_ref[currentMinutes:currentMinutes+self.nsteps,:],
-        #     'power_ref': coordinateSignals[:int(self.nsteps_eff / self.step_mins)][:,np.newaxis],
-        #     'bat_ref': self.socSchedule.take(range(currentMinutes, currentMinutes+self.nsteps_eff), axis=0, mode='wrap'),
-        #     'charge_incen': self.chargeSchedule[currentMinutes:currentMinutes+self.nsteps_eff,:],
-        #     'base_load': self.baseLoad[currentMinutes:currentMinutes+self.nsteps_eff,:],
-        # }
+    def SimpleMPC_alt(self):
 
         if self.HVAC_mode == 1:
             # self.horizonData['y_ref'] = self.setpointSchedule[0,currentMinutes:currentMinutes+self.nsteps_eff,:] + self.setpointInfo['deadband']
@@ -339,7 +314,7 @@ class BuildingController:
             (self.sensorValues['batterySOC'] <= self.horizonData['bat_min'][0,0] + 0.05):
                 self.actuatorValues['battery'] = 0
             else:
-                self.actuatorValues['battery'] = control_traj['u_bat'].value[0,0]
+                self.actuatorValues['battery'] = control_traj['u_bat'].value[0,0] + control_traj['u_bat_hvac'].value[0,0]
             self.feasible = True
 
         trajectories = {}
@@ -359,6 +334,8 @@ class BuildingController:
             trajectories['u_hvac'] = np.clip(trajectories['u_hvac'], a_min=0, a_max=2)
         elif self.HVAC_mode == 3:
             trajectories['u_hvac'] = np.clip(trajectories['u_hvac'], a_min=0, a_max=7)
+
+        self.hvac_prev = trajectories['u_hvac'][0,0]
 
         return trajectories
 
@@ -469,7 +446,9 @@ class BuildingController:
 
     def MPC_Cool(self, RC, alpha):
         u_hvac = cp.Variable((self.nsteps_eff,1), name='u_hvac', bounds=[0,10])
+        # u_hvac_shift = cp.Variable((self.nsteps_eff,1), name='u_hvac_shift', bounds=[0,10])
         u_bat = cp.Variable((self.nsteps_eff,1), name='u_bat')
+        u_bat_hvac = cp.Variable((self.nsteps_eff,1), name='u_bat_hvac')
         u_load = cp.Variable((self.nsteps_eff,1), name='u_load')
         u_tot = cp.Variable((self.nsteps_eff,1), name='u_tot')
         y = cp.Variable((self.nsteps_eff,1), name='y')
@@ -478,6 +457,7 @@ class BuildingController:
         y0 = cp.Parameter((1), name='y0')
         yref = cp.Parameter((self.nsteps_eff,1), name='y_ref')
         d = cp.Parameter((self.nsteps_eff,1), name='d')
+        # hvac_prev = cp.Parameter((self.hvac_offset,1), name='hvac_prev')
         stored0 = cp.Parameter((1), name='stored0')
         batmin = cp.Parameter((self.nsteps_eff,1), name='bat_min')
         batmax = cp.Parameter((self.nsteps_eff,1), name='bat_max')
@@ -497,15 +477,16 @@ class BuildingController:
 
         constraints = [y[0] == y0,
                        y[1:] <= yref[1:],
+                    #    u_hvac_shift[:self.hvac_offset] == hvac_prev,
+                    #    u_hvac_shift[self.hvac_offset:] == u_hvac[:-self.hvac_offset],
                        u_load == u_hvac + u_bat,
-                       u_tot == u_hvac + u_bat + base_load,
-                       u_bat <= self.inverterSize, u_bat >= -(u_load),
+                       u_tot == u_hvac + u_bat + u_bat_hvac + base_load,
+                       u_bat <= self.inverterSize, u_bat >= -(base_load),
+                       u_bat_hvac <= 0, u_bat_hvac >= -(u_hvac),
                        stored[0] == stored0,
                        stored[1:] >= batmin[1:],
                        stored[1:] <= batmax[1:],
-                       u_tot <= power_ref,
-                    #    u_hvac >= 0,
-                    #    u_hvac <= 10,
+                       u_tot <= power_ref
                     ]
         for i in range(1, self.nsteps_eff):
             constraints.append(y[i] == (-1/(RC)*y[i-1] + 1/(RC)*d[i-1] + alpha*-u_hvac[i-1])*self.step_mins + y[i-1])
@@ -517,7 +498,9 @@ class BuildingController:
     
     def MPC_Heat(self, RC, alpha):
         u_hvac = cp.Variable((self.nsteps_eff,1), name='u_hvac', bounds=[0,10])
+        # u_hvac_shift = cp.Variable((self.nsteps_eff,1), name='u_hvac_shift', bounds=[0,10])
         u_bat = cp.Variable((self.nsteps_eff,1), name='u_bat')
+        u_bat_hvac = cp.Variable((self.nsteps_eff,1), name='u_bat_hvac')
         u_load = cp.Variable((self.nsteps_eff,1), name='u_load')
         u_tot = cp.Variable((self.nsteps_eff,1), name='u_tot')
         y = cp.Variable((self.nsteps_eff,1), name='y')
@@ -526,6 +509,7 @@ class BuildingController:
         y0 = cp.Parameter((1), name='y0')
         yref = cp.Parameter((self.nsteps_eff,1), name='y_ref')
         d = cp.Parameter((self.nsteps_eff,1), name='d')
+        # hvac_prev = cp.Parameter((self.hvac_offset,1), name='hvac_prev')
         stored0 = cp.Parameter((1), name='stored0')
         batmin = cp.Parameter((self.nsteps_eff,1), name='bat_min')
         batmax = cp.Parameter((self.nsteps_eff,1), name='bat_max')
@@ -545,9 +529,12 @@ class BuildingController:
 
         constraints = [y[0] == y0,
                        y[1:] >= yref[1:],
+                    #    u_hvac_shift[:self.hvac_offset] == hvac_prev,
+                    #    u_hvac_shift[self.hvac_offset:] == u_hvac[:-self.hvac_offset],
                        u_load == u_hvac + base_load,
-                       u_tot == u_hvac + u_bat + base_load,
-                       u_bat <= self.inverterSize, u_bat >= -(u_load),
+                       u_tot == u_hvac + u_bat + u_bat_hvac + base_load,
+                       u_bat <= self.inverterSize, u_bat >= -(base_load),
+                       u_bat_hvac <= 0, u_bat_hvac >= -(u_hvac),
                        stored[0] == stored0,
                        stored[1:] >= batmin[1:],
                        stored[1:] <= batmax[1:],

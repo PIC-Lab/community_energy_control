@@ -67,7 +67,7 @@ class Coordinator():
         paramDict['flexMin'] = np.zeros((self.numBuildings, self.nsteps))
         paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 200
         paramDict['trans_ref'] = np.ones((len(self.transInfo.keys()), self.nsteps)) * 5
-        # paramDict['predLoad'] = np.ones_like(self.predictedLoad)
+        paramDict['predLoad'] = np.ones_like(self.predictedLoad)
         paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
         # paramDict['baseLoad'] = np.ones((self.numBuildings, self.nsteps))
         self.adjustProb.SolveProblem(paramDict, verbose=verbose)
@@ -131,7 +131,7 @@ class Coordinator():
         # paramDict['flexMax'] = np.ones((self.numBuildings, self.nsteps)) * 100
         paramDict['flexMin'] = self.predictedFlex[:,:,0]
         paramDict['flexMax'] = self.predictedFlex[:,:,1]
-        # paramDict['predLoad'] = self.predictedLoad
+        paramDict['predLoad'] = self.predictedLoad
         # paramDict['baseLoad'] = np.ones((len(self.transInfo.keys()), self.nsteps))
         paramDict['baseLoad'] = self.baseLoad
         self.adjustProb.SolveProblem(paramDict, verbose=verbose)
@@ -191,9 +191,12 @@ class Coordinator():
         Method for resetting the values used by the other components of the coordination system (like flexLoad)
         '''
         adjustValues = {}
-        adjustValues['flexLoad'] = np.zeros((self.numBuildings,self.nsteps))
-        # adjustValues['totalLoad'] = self.predictedLoad
-        adjustValues['totalLoad'] = self.predictedFlex[:,:,1] - adjustValues['flexLoad']
+        adjustValues['flexBoundLoad'] = np.zeros((self.numBuildings,self.nsteps))
+        adjustValues['flexPredLoad'] = np.zeros((self.numBuildings,self.nsteps))
+        adjustValues['flexLoad'] = adjustValues['flexBoundLoad'] + adjustValues['flexPredLoad']
+        adjustValues['buildBoundLoad'] = self.predictedFlex[:,:,1] - adjustValues['flexLoad']
+        adjustValues['transBoundLoad'] = self.transMap@adjustValues['buildBoundLoad']
+        adjustValues['transPredLoad'] = self.transMap@self.predictedLoad
         return adjustValues
 
 class AssessOptimization(ConvexProblem):
@@ -234,50 +237,24 @@ class AdjustOptimization(ConvexProblem):
         # self.DefineProblem()
         self.DefineProblem()
 
-    # def DefineProblem(self):
-    #     '''
-    #     Define the optimization problem used in the adjust phase to choose which buildings will utilize their flexibility
-    #     '''
-    #     flexLoad = cp.Variable((self.numBuildings, self.n), name='flexLoad')
-    #     totalLoad = cp.Variable((self.numBuildings, self.n), name='totalLoad')
-
-    #     usagePenalty = cp.Parameter((self.numBuildings, self.n), name='usagePenalty')
-    #     dr_ref = cp.Parameter(self.n, name='pow_ref')
-    #     trans_ref = cp.Parameter((len(self.transLimits), self.n), name='trans_ref')
-    #     predLoad = cp.Parameter((self.numBuildings, self.n), name='predLoad')
-    #     baseLoad = cp.Parameter((len(self.transLimits), self.n), name='baseLoad')
-
-    #     W1 = 2
-    #     W2 = 1
-    #     W3 = 1
-
-    #     flexMax = cp.Parameter((self.numBuildings, self.n), name='flexMax')
-    #     flexMin = cp.Parameter((self.numBuildings, self.n), name='flexMin')
-
-    #     objective = cp.Minimize(W1*cp.sum_squares(usagePenalty.T@flexLoad)
-    #                             +W2*cp.norm(flexLoad))
-    #     constraints = []
-    #     constraints.append(totalLoad <= flexMax)
-    #     constraints.append(totalLoad >= flexMin)
-    #     constraints.append(cp.sum(totalLoad, axis=0) <= dr_ref)
-    #     constraints.append(totalLoad == predLoad + flexLoad)
-    #     for i in range(0, len(self.transLimits)):
-    #         constraints.append(self.transMap[i,:]@totalLoad + baseLoad[i,:] <= trans_ref[i,:])
-
-    #     self.prob = cp.Problem(objective, constraints)
-
     def DefineProblem(self):
         '''
         Define the optimization problem used in the adjust phase to choose which buildings will utilize their flexibility
         '''
+        transNum = len(self.transLimits)
+
+        flexBoundLoad = cp.Variable((self.numBuildings, self.n), name='flexBoundLoad', nonneg=True)
+        flexPredLoad = cp.Variable((self.numBuildings, self.n), name='flexPredLoad')
         flexLoad = cp.Variable((self.numBuildings, self.n), name='flexLoad')
-        totalLoad = cp.Variable((self.numBuildings, self.n), name='totalLoad')
+        buildBoundLoad = cp.Variable((self.numBuildings, self.n), name='buildBoundLoad')
+        transBoundLoad = cp.Variable((transNum, self.n), name='transBoundLoad')
+        transPredLoad = cp.Variable((transNum, self.n), name='transPredLoad')
 
         usagePenalty = cp.Parameter((self.numBuildings, self.n), name='usagePenalty')
         dr_ref = cp.Parameter(self.n, name='pow_ref')
-        trans_ref = cp.Parameter((len(self.transLimits), self.n), name='trans_ref')
-        predLoad = cp.Parameter((len(self.transLimits), self.n), name='predLoad')
-        baseLoad = cp.Parameter((len(self.transLimits), self.n), name='baseLoad')
+        trans_ref = cp.Parameter((transNum, self.n), name='trans_ref', nonneg=True)
+        predLoad = cp.Parameter((self.numBuildings, self.n), name='predLoad')
+        baseLoad = cp.Parameter((transNum, self.n), name='baseLoad', nonneg=True)
 
         W1 = 2
         W2 = 1
@@ -287,15 +264,20 @@ class AdjustOptimization(ConvexProblem):
         flexMin = cp.Parameter((self.numBuildings, self.n), name='flexMin')
 
         objective = cp.Minimize(W1*cp.sum_squares(usagePenalty.T@flexLoad)
-                                +W2*cp.norm(flexLoad))
+                                +W2*cp.sum_squares(flexLoad)
+                                +W3*cp.sum(cp.max(transPredLoad, axis=1)))
         constraints = []
         # constraints.append(totalLoad <= flexMax)
-        constraints.append(totalLoad >= flexMin)
-        constraints.append(cp.sum(totalLoad, axis=0) <= dr_ref)
-        constraints.append(totalLoad == flexMax - flexLoad)
-        constraints.append(flexLoad >= 0)
-        for i in range(0, len(self.transLimits)):
-            constraints.append(self.transMap[i,:]@totalLoad + baseLoad[i,:] <= trans_ref[i,:])
+        constraints.append(flexLoad == flexBoundLoad + flexPredLoad)
+        constraints.append(buildBoundLoad >= flexMin)
+        constraints.append(buildBoundLoad == flexMax - flexLoad)
+        constraints.append(transBoundLoad == self.transMap@buildBoundLoad)
+        constraints.append(transBoundLoad + baseLoad <= trans_ref)
+        constraints.append(cp.sum(transBoundLoad, axis=0) <= dr_ref)
+        constraints.append(transPredLoad == self.transMap@(predLoad - flexPredLoad))
+        
+        # for i in range(0, len(self.transLimits)):
+        #     constraints.append(self.transMap[i,:]@totalBoundLoad + baseLoad[i,:] <= trans_ref[i,:])
             # constraints.append(self.transMap[i,:]@totalLoad + baseLoad[i,:] >= -trans_ref[i,:])
 
         self.prob = cp.Problem(objective, constraints)

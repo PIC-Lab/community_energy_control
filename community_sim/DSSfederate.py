@@ -83,16 +83,13 @@ dss = OpenDSS([MasterFile], stepsize, start_time)
 # Run additional OpenDSS commands
 dss.run_command('set controlmode=time')
 
-# for alias in simParams['controlledAliases']:
-#     dss.remove_loadshape(alias)
-
 # Get info on all properties of a class
 df = dss.get_all_elements('Load')
 df.to_csv(load_info_file)
 loadNames = df['Name'].astype(str)
 
-# for alias in df.index:
-#     dss.remove_loadshape(alias)
+for name in loadNames:
+    dss.remove_loadshape(name)
 
 storageInfo = dss.get_all_elements('Storage')
 
@@ -152,8 +149,8 @@ try:
 
         # load
         logger.debug("Setting bus loads")
-        for loadName, set_point in loadPowers.items():
-            dss.set_power(loadName, element='Load', p=set_point)
+        for name, set_point in loadPowers.items():
+            dss.set_power(name, element='Load', p=set_point)
 
         # Battery control
         logger.debug("Setting battery values")
@@ -205,9 +202,9 @@ try:
         load_powers_data = {}
         reactive_power = {}
         # for loadName in loadPowers:
-        for loadName in loadNames:
-            load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})
-            reactive_power.update({loadName: dss.get_power(loadName, element='Load', total=True)[1]})
+        for name in loadNames:
+            load_powers_data.update({name: dss.get_power(name, element='Load', total=True)[0]})
+            reactive_power.update({name: dss.get_power(name, element='Load', total=True)[1]})
         load_powers_results.append(load_powers_data)
         reactive_power_results.append(reactive_power)
         stepTime.append(dt.datetime.now() - stepStart)
