@@ -6,8 +6,14 @@ import shutil
 
 def Main():
     batches = [
-        {'start': "01/02/24 00:00"},
-        {'start': "07/01/24 00:00"}
+        {'start': "01/02/24 00:00",
+         'batDischargeMode': "loadFollow"},
+        {'start': "01/02/24 00:00",
+         'batDischargeMode': "bulk"},
+        {'start': "07/01/24 00:00",
+         'batDischargeMode': "loadFollow"},
+        {'start': "07/01/24 00:00",
+         'batDischargeMode': "bulk"},
     ]
     skip = 0
 
@@ -34,6 +40,7 @@ def Main():
     params["controlledLoads"] = ["hvac", "battery"]
     params["batCoveredLoads"] = ["base", "waterHeater", "hvac"]
     params["batDischargeMode"] = "loadFollow"
+    params["note"] = ""
 
     batchNum = 0
 

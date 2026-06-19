@@ -23,7 +23,7 @@
     ],
     "logLevel": "DEBUG",
     "resultLevel": "ROLLOUT",
-    "resultsDir": "results/setpointControl_full_winter/",
+    "resultsDir": "results/setpointControl_full_winter_5/",
     "controllerRun": "return_7",
     "nstepsCoord": 48,
     "stepSizeCoord": 5,
@@ -39,5 +39,5 @@
         "hvac"
     ],
     "batDischargeMode": "loadFollow",
-    "notes": "Debugging feasibility issues in winter"
+    "notes": "Debugging feasibility peaking issues, trying without the setpoint hold counter"
 }

@@ -162,9 +162,10 @@ class CommunityController:
             self.coordinator.baseLoad = self.baseTransLoad[:,currentMinutes:currentMinutes+self.nsteps]
             self.coordinator.Step()
             # coordinateSignals = self.predictedLoad + self.coordinator.adjustValues['flexLoad'] + 0.1
-            coordinateSignals = np.where(self.coordinator.adjustValues['flexLoad'] == 0,
-                                        np.ones_like(self.predictedLoad)*20 ,
-                                        self.predictedLoad + self.coordinator.adjustValues['flexLoad'])
+            # coordinateSignals = np.where(self.coordinator.adjustValues['flexLoad'] == 0,
+            #                             np.ones_like(self.predictedLoad)*20 ,
+            #                             self.predictedLoad + self.coordinator.adjustValues['flexLoad'])
+            coordinateSignals = self.coordinator.adjustValues['totalLoad']
             self.coordinateSignals_eff = np.repeat(coordinateSignals, self.stepSize_ratio, axis=1)
             self.stepCount = 0
 
@@ -201,8 +202,8 @@ class CommunityController:
         self.coordDebug['gen'] = {}
         for i in range(len(self.coordinator.transInfo.keys())):
             self.coordDebug['gen'][f"trans{i+1} lim"] = self.coordinator.transLim[i:i+1]
-            totalLoad = self.coordinator.adjustValues['flexLoad'] + self.coordinator.predictedLoad
-            self.coordDebug['gen'][f"trans{i+1} building load"] = self.coordinator.transMap[i,:]@totalLoad
+            # totalLoad = self.coordinator.adjustValues['flexLoad'] + self.coordinator.predictedLoad
+            self.coordDebug['gen'][f"trans{i+1} building load"] = self.coordinator.transMap[i,:]@self.coordinator.adjustValues['totalLoad']
             self.coordDebug['gen'][f"trans{i+1} base load"] = self.coordinator.baseLoad[i,:]
         self.coordDebug['gen']['coord feas'] = [self.coordinator.adjustProb.feasible]
         self.coordDebug['gen']['coord state'] = [self.coordinator.state]

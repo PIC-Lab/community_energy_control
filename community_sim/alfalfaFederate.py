@@ -220,7 +220,9 @@ try:
         h.helicsPublicationPublishString(pubid['bat_cover'], json.dumps(batFollowPowers))
         h.helicsPublicationPublishString(pubid['indoor_temp'], json.dumps(indoorTemp))
 
+        logger.debug("Published values")
         logger.debug(loadPowers)
+        logger.debug(batFollowPowers)
         logger.debug(indoorTemp)
 
         # Advance the model

@@ -36,6 +36,7 @@ main_results_file = os.path.join(ResultsDir, 'main_results.csv')
 voltage_file = os.path.join(ResultsDir, 'voltage_results.csv')
 elements_file = os.path.join(ResultsDir, 'element_results.csv')
 load_powers_results_file = os.path.join(ResultsDir, 'load_powers_results.csv')
+reactive_power_file = os.path.join(ResultsDir, 'reactive_power_results.csv')
 battery_results_file = os.path.join(ResultsDir, 'battery_results.csv')
 battery_dispatch_file = os.path.join(ResultsDir, 'battery_dispatch.csv')
 battery_power_file = os.path.join(ResultsDir, 'battery_power.csv')
@@ -88,6 +89,7 @@ dss.run_command('set controlmode=time')
 # Get info on all properties of a class
 df = dss.get_all_elements('Load')
 df.to_csv(load_info_file)
+loadNames = df['Name'].astype(str)
 
 # for alias in df.index:
 #     dss.remove_loadshape(alias)
@@ -100,6 +102,7 @@ main_results = []
 voltage_results = []
 element_results = []
 load_powers_results = []
+reactive_power_results = []
 battery_results = []
 battery_dispatch = []
 battery_power = []
@@ -135,8 +138,8 @@ try:
             batCoverPowers = json.loads(batCoverPowers)
             logger.debug("Received updated value for bat_cover")
             logger.debug(batCoverPowers)
-        else:
-            batCoverPowers = {}
+        # else:
+        #     batCoverPowers = {}
 
         isupdated = h.helicsInputIsUpdated(subid['control_events'])
         if isupdated == 1:
@@ -162,10 +165,10 @@ try:
                         batpow = 0
                     else:
                         if value > 0:
-                            batpow = value/2
+                            batpow = value
                         else:
                             if simParams['batDischargeMode'] == "bulk":
-                                batpow = value/2
+                                batpow = value
                             elif simParams['batDischargeMode'] == "loadFollow":
                                 batpow = batCoverPowers[location]*-1
                             else:
@@ -200,9 +203,13 @@ try:
         
         # Get load data
         load_powers_data = {}
-        for loadName in loadPowers:
+        reactive_power = {}
+        # for loadName in loadPowers:
+        for loadName in loadNames:
             load_powers_data.update({loadName: dss.get_power(loadName, element='Load', total=True)[0]})
+            reactive_power.update({loadName: dss.get_power(loadName, element='Load', total=True)[1]})
         load_powers_results.append(load_powers_data)
+        reactive_power_results.append(reactive_power)
         stepTime.append(dt.datetime.now() - stepStart)
 
 except KeyboardInterrupt:
@@ -212,6 +219,7 @@ except KeyboardInterrupt:
 pd.DataFrame(main_results).to_csv(main_results_file)
 pd.DataFrame(voltage_results).to_csv(voltage_file)
 pd.DataFrame(load_powers_results).to_csv(load_powers_results_file)
+pd.DataFrame(reactive_power_results).to_csv(reactive_power_file)
 pd.DataFrame(battery_results).to_csv(battery_results_file)
 pd.DataFrame(battery_dispatch).to_csv(battery_dispatch_file)
 pd.DataFrame(battery_power).to_csv(battery_power_file)

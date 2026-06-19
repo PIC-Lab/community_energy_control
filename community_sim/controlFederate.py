@@ -90,14 +90,17 @@ base_load_data = pd.read_csv('sim_schedules/base_load_ws.csv')
 base_load = base_load_data.loc[:,simParams['controlledAliases']].rename(simIdxMapping, axis=1)
 logger.debug(f"base_load: {base_load.columns}")
 
-trans_base_load = np.zeros((len(transInfo), int(base_load_data.shape[0] / simParams['stepSizeCoord'])))
-i = 0
-for key, value in transInfo.items():
-    trans_idx = [x for x in value['SimBuildings'] if x not in simParams['controlledAliases']]
-    logger.debug(f"{key}: {trans_idx}")
-    temp = base_load_data.loc[:,trans_idx].sum(axis=1)
-    trans_base_load[i,:] = temp.values.reshape(int(temp.shape[0] / simParams['stepSizeCoord']),simParams['stepSizeCoord']).mean(axis=1)
-    i += 1
+
+# trans_base_load = np.zeros((len(transInfo), int(base_load_data.shape[0] / simParams['stepSizeCoord'])))
+# i = 0
+# for key, value in transInfo.items():
+#     trans_idx = [x for x in value['SimBuildings'] if x not in simParams['controlledAliases']]
+#     logger.debug(f"{key}: {trans_idx}")
+#     temp = base_load_data.loc[:,trans_idx].sum(axis=1)
+#     trans_base_load[i,:] = temp.values.reshape(int(temp.shape[0] / simParams['stepSizeCoord']),simParams['stepSizeCoord']).mean(axis=1)
+#     i += 1
+trans_base_load = pd.read_csv('sim_schedules/transBase.csv').values
+trans_base_load = trans_base_load.reshape(int(trans_base_load.shape[0] / simParams['stepSizeCoord']),simParams['stepSizeCoord'],trans_base_load.shape[1]).mean(axis=1).T
 logger.debug(f"trans_base_load shape: {trans_base_load.shape}")
 
 # ----- Control setup -----

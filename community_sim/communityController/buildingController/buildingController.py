@@ -316,7 +316,7 @@ class BuildingController:
                     elif self.HVAC_mode == 3:
                         self.actuatorValues['coolingSetpoint'] = 40
                         self.actuatorValues['heatingSetpoint'] = control_traj['y'].value[1,0]
-                    self.count += 1
+                    # self.count += 1
                 else:
                     if self.HVAC_mode == 1:
                         self.actuatorValues['coolingSetpoint'] = control_traj['y'].value[1,0] + 0.8
@@ -324,7 +324,7 @@ class BuildingController:
                     elif self.HVAC_mode == 3:
                         self.actuatorValues['coolingSetpoint'] = 40
                         self.actuatorValues['heatingSetpoint'] = control_traj['y'].value[1,0] - 0.8
-                    self.count += 1
+                    # self.count += 1
             else:
                 self.count += 1
                 if self.count >= 5:
