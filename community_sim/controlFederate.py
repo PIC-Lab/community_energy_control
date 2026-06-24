@@ -208,22 +208,31 @@ try:
                 for key in names:
                     controlTraj[key] = controller.trajectoryList[alias][f"horizon_{key}"][0,0,0].detach().item()
             elif simParams['testCase'] == 'MPC':
-                names = ['u_heat', 'u_cool', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref']
+                # names = ['u_heat', 'u_cool', 'u_bat', 'u_tot', 'y', 'y_max', 'y_min', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref']
                 # names = ['u_hvac', 'y', 'y_max', 'y_min', 'd', 'cost']
-                for key in names:
-                    if not(key in controller.trajectoryList[alias].keys()):
-                        continue
-                    controlTraj[key] = controller.trajectoryList[alias][key][0,0]
+                # for key in names:
+                #     if not(key in controller.trajectoryList[alias].keys()):
+                #         continue
+                #     controlTraj[key] = controller.trajectoryList[alias][key][0,0]
+                for key, value in controller.trajectoryList[alias]:
+                    controlTraj[key] = value[0,0]
                 controlTraj['mpc_feas'] = controller.controllerList[aliasesSensorIdx.index(alias)].feasible
                 controlTraj['mpc_obj'] = controller.controllerList[aliasesSensorIdx.index(alias)].prob.objective.value
                 controlTraj['hvac_mode'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_mode
                 controlTraj['hvac_lock'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_lock
             elif simParams['testCase'] == 'MPC_alt':
-                names = ['u_hvac', 'u_hvac_shift', 'u_bat', 'u_bat_hvac', 'u_load', 'u_tot', 'y', 'y_ref', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref', 'charge_incen', 'base_load']
-                for key in names:
-                    if not(key in controller.trajectoryList[alias].keys()):
-                        continue
-                    controlTraj[key] = controller.trajectoryList[alias][key][0,0]
+                # names = ['u_hvac', 'u_hvac_shift', 'u_bat', 'u_bat_hvac', 'u_load', 'u_tot', 'y', 'y_ref', 'd', 'bat_max', 'bat_min', 'stored', 'power_ref', 'cost', 'bat_ref', 'charge_incen', 'base_load']
+                # for key in names:
+                #     if not(key in controller.trajectoryList[alias].keys()):
+                #         continue
+                #     controlTraj[key] = controller.trajectoryList[alias][key][0,0]
+                for key, value in controller.trajectoryList[alias].items():
+                    if len(value.shape) == 2:
+                        controlTraj[key] = value[0,0]
+                    elif len(value.shape) == 1:
+                        controlTraj[key] = value[0]
+                    else:
+                        pass
                 controlTraj['mpc_feas'] = controller.controllerList[aliasesSensorIdx.index(alias)].feasible
                 controlTraj['mpc_obj'] = controller.controllerList[aliasesSensorIdx.index(alias)].prob.objective.value
                 controlTraj['hvac_mode'] = controller.controllerList[aliasesSensorIdx.index(alias)].HVAC_mode

@@ -47,11 +47,12 @@ class BuildingController:
         # HVAC Values
         self.HVAC_mode = 0
         self.hvac_offset = 3
-        self.hvac_prev = 0
+        self.hvac_queue = np.zeros((self.hvac_offset,1))
 
         # Battery Values
         self.batSize = 16.4
         self.inverterSize = 9.6
+        self.bat_hvac_queue = np.zeros((self.hvac_offset,1))
 
         # DPC variables
         self.cl_system = None
@@ -143,7 +144,7 @@ class BuildingController:
             self.horizonData = {
                 'y0': np.array([self.sensorValues['indoorAirTemp']]),
                 'd': d,
-                'hvac_prev': np.ones((self.hvac_offset,1))*self.hvac_prev,
+                'hvac_prev': self.hvac_queue,
                 'stored0': np.array([self.sensorValues['batterySOC']]),
                 'bat_min': np.ones((self.nsteps_eff,1))*0.1*self.batSize,
                 'bat_max': np.ones((self.nsteps_eff,1))*15,
@@ -256,15 +257,14 @@ class BuildingController:
     
     def SimpleMPC_alt(self):
 
+        # Select hvac optimization
         if self.HVAC_mode == 1:
-            # self.horizonData['y_ref'] = self.setpointSchedule[0,currentMinutes:currentMinutes+self.nsteps_eff,:] + self.setpointInfo['deadband']
             self.prob = self.prob_cool
         elif self.HVAC_mode == 3:
-            # self.horizonData['y_ref'] = self.setpointSchedule[0,currentMinutes:currentMinutes+self.nsteps_eff,:] - self.setpointInfo['deadband']
             self.prob = self.prob_heat
             
+        # Run optimization
         for key, param in self.prob.param_dict.items():
-            # self.logger.debug(f"Parameter {key}, size {param.shape}")
             param.value = self.horizonData[key]
         try:
             self.prob.solve(solver='clarabel')
@@ -272,7 +272,7 @@ class BuildingController:
             self.logger.warn("Solver error occurred")
         control_traj = self.prob.var_dict
 
-        # if control_traj['u_tot'].value is None:
+        # Infeasible/error handling
         if control_traj['u_hvac'].value is None:
             self.logger.warn(f"MPC optization failed for {self.buildingID}")
             self.feasible = False
@@ -282,6 +282,7 @@ class BuildingController:
             elif self.HVAC_mode == 3:
                 self.actuatorValues['coolingSetpoint'] = 35
                 self.actuatorValues['heatingSetpoint'] = self.horizonData['y_ref'][0,0] - self.setpointInfo['deadband']
+        # Set setpoint based on u_hvac
         else:
             if self.count == 0:
                 if (control_traj['u_hvac'].value[0,0] > 0.5):
@@ -305,18 +306,13 @@ class BuildingController:
                 if self.count >= 5:
                     self.count = 0
 
-            if self.actuatorValues['coolingSetpoint'] <= 10:
-                self.actuatorValues['coolingSetpoint'] = 10
-            if self.actuatorValues['heatingSetpoint'] >= 30:
-                self.actuatorValues['heatingSetpoint'] = 30
+        # Hard limits on setpoint
+        if self.actuatorValues['coolingSetpoint'] <= 10:
+            self.actuatorValues['coolingSetpoint'] = 10
+        if self.actuatorValues['heatingSetpoint'] >= 30:
+            self.actuatorValues['heatingSetpoint'] = 30
 
-            if (control_traj['u_bat'].value[0,0] < 0) and \
-            (self.sensorValues['batterySOC'] <= self.horizonData['bat_min'][0,0] + 0.05):
-                self.actuatorValues['battery'] = 0
-            else:
-                self.actuatorValues['battery'] = control_traj['u_bat'].value[0,0] + control_traj['u_bat_hvac'].value[0,0]
-            self.feasible = True
-
+        # Move variables and parameters into one dict
         trajectories = {}
         for key, value in self.prob.param_dict.items():
             trajectories[key] = value.value
@@ -324,18 +320,68 @@ class BuildingController:
         if control_traj['u_tot'].value is None:
             trajectories['y'] = self.horizonData['y0'][np.newaxis,:]
             trajectories['u_hvac'] = np.zeros((self.nsteps_eff,1))
+            trajectories['u_bat_hvac'] = np.zeros((self.nsteps_eff,1))
             trajectories['stored'] = self.horizonData['stored0'][np.newaxis,:]
             trajectories['u_bat'] = np.zeros((self.nsteps_eff,1))
             trajectories['u_tot'] = trajectories['u_bat'] + trajectories['u_hvac'] + trajectories['base_load']
+            trajectories['u_load'] = trajectories['u_hvac'] + trajectories['base_load']
         else:
             for key, value in self.prob.var_dict.items():
                 trajectories[key] = value.value
+
+        # u_hvac fixing
+        trajectories['u_hvac_old'] = trajectories['u_hvac']
         if self.HVAC_mode == 1:
             trajectories['u_hvac'] = np.clip(trajectories['u_hvac'], a_min=0, a_max=2)
+            # trajectories['u_hvac'] = np.where(trajectories['u_hvac'] > 1, np.ones((self.nsteps_eff,1))*2, trajectories['u_hvac'])
         elif self.HVAC_mode == 3:
             trajectories['u_hvac'] = np.clip(trajectories['u_hvac'], a_min=0, a_max=7)
+            # trajectories['u_hvac'] = np.where(trajectories['u_hvac'] > 2, np.ones((self.nsteps_eff,1))*7, trajectories['u_hvac'])
 
-        self.hvac_prev = trajectories['u_hvac'][0,0]
+        self.hvac_queue[:-1] = self.hvac_queue[1:]
+        self.hvac_queue[-1] = trajectories['u_hvac'][0,0]
+
+        # Run battery fixing optimization
+        # hvac_shift = np.concat((self.hvac_queue, trajectories['u_hvac'][:-self.hvac_offset]), axis=0)
+        # hvac_fix = hvac_shift.copy()
+        # for i in range(hvac_shift.shape[0]-3):
+        #     if (hvac_shift[i] == 7) and (hvac_shift[i+1] < 7):
+        #         hvac_fix[i+1] = 7
+        #         hvac_fix[i+2] = 7
+        #         hvac_fix[i+3] = 7
+        # self.horizonData['u_load'] = hvac_fix + self.horizonData['base_load']
+        # self.horizonData['u_tot_old'] = trajectories['u_tot']
+        # for key, param in self.prob_bat.param_dict.items():
+        #     param.value = self.horizonData[key]
+        # try:
+        #     self.prob_bat.solve(solver='clarabel')
+        # except cp.SolverError:
+        #     self.logger.warn("Solver error occurred")
+
+        # trajectories['u_hvac'] = hvac_fix
+        # trajectories['u_bat_old'] = trajectories['u_bat']
+        # trajectories['u_tot_old'] = trajectories['u_tot']
+        # trajectories['u_load_old'] = trajectories['u_load']
+        # if not(self.prob_bat.var_dict['u_bat'].value is None):
+        #     trajectories['u_bat'] = self.prob_bat.var_dict['u_bat'].value
+        #     trajectories['u_tot'] = self.prob_bat.var_dict['u_tot'].value
+        #     trajectories['u_load'] = self.prob_bat.param_dict['u_load'].value
+
+        # Update battery actuator value
+        if (trajectories['u_bat'][0,0] < 0) and \
+        (self.sensorValues['batterySOC'] <= self.horizonData['bat_min'][0,0] + 0.05):
+        # if (self.bat_hvac_queue[0] < 0) and \
+        # (self.sensorValues['batterySOC'] <= self.horizonData['bat_min'][0,0] + 0.05):
+        #     self.bat_hvac_queue[:-1] = self.bat_hvac_queue[1:]
+        #     self.bat_hvac_queue[-1] = 0
+            self.actuatorValues['battery'] = 0
+        else:
+            # self.bat_hvac_queue[:-1] = self.bat_hvac_queue[1:]
+            # self.bat_hvac_queue[-1] = trajectories['u_bat_hvac'][0,0]
+            # self.actuatorValues['battery'] = self.bat_hvac_queue[0]
+            self.actuatorValues['battery'] = trajectories['u_bat'][0,0]
+        
+        self.feasible = True
 
         return trajectories
 
@@ -443,12 +489,13 @@ class BuildingController:
         self.logger.debug(f"Building {self.buildingID} heating optimization")
         self.logger.debug(f"Is DPP? {self.prob_heat.is_dcp(dpp=True)}")
         self.logger.debug(f"Is DCP? {self.prob_heat.is_dcp(dpp=False)}")
+        self.prob_bat = self.MPC_Bat()
 
     def MPC_Cool(self, RC, alpha):
         u_hvac = cp.Variable((self.nsteps_eff,1), name='u_hvac', bounds=[0,10])
-        # u_hvac_shift = cp.Variable((self.nsteps_eff,1), name='u_hvac_shift', bounds=[0,10])
+        u_hvac_shift = cp.Variable((self.nsteps_eff,1), name='u_hvac_shift', bounds=[0,10])
         u_bat = cp.Variable((self.nsteps_eff,1), name='u_bat')
-        u_bat_hvac = cp.Variable((self.nsteps_eff,1), name='u_bat_hvac')
+        # u_bat_hvac = cp.Variable((self.nsteps_eff,1), name='u_bat_hvac')
         u_load = cp.Variable((self.nsteps_eff,1), name='u_load')
         u_tot = cp.Variable((self.nsteps_eff,1), name='u_tot')
         y = cp.Variable((self.nsteps_eff,1), name='y')
@@ -457,7 +504,7 @@ class BuildingController:
         y0 = cp.Parameter((1), name='y0')
         yref = cp.Parameter((self.nsteps_eff,1), name='y_ref')
         d = cp.Parameter((self.nsteps_eff,1), name='d')
-        # hvac_prev = cp.Parameter((self.hvac_offset,1), name='hvac_prev')
+        hvac_prev = cp.Parameter((self.hvac_offset,1), name='hvac_prev')
         stored0 = cp.Parameter((1), name='stored0')
         batmin = cp.Parameter((self.nsteps_eff,1), name='bat_min')
         batmax = cp.Parameter((self.nsteps_eff,1), name='bat_max')
@@ -477,12 +524,14 @@ class BuildingController:
 
         constraints = [y[0] == y0,
                        y[1:] <= yref[1:],
-                    #    u_hvac_shift[:self.hvac_offset] == hvac_prev,
-                    #    u_hvac_shift[self.hvac_offset:] == u_hvac[:-self.hvac_offset],
-                       u_load == u_hvac + u_bat,
-                       u_tot == u_hvac + u_bat + u_bat_hvac + base_load,
-                       u_bat <= self.inverterSize, u_bat >= -(base_load),
-                       u_bat_hvac <= 0, u_bat_hvac >= -(u_hvac),
+                       u_hvac_shift[:self.hvac_offset] == hvac_prev,
+                       u_hvac_shift[self.hvac_offset:] == u_hvac[:-self.hvac_offset],
+                       u_load == u_hvac_shift + u_bat,
+                    #    u_tot == u_hvac + u_bat + u_bat_hvac + base_load,
+                       u_tot == u_hvac_shift + u_bat + base_load,
+                       u_bat <= self.inverterSize, u_bat >= -(u_load),
+                    #    u_bat <= self.inverterSize, u_bat >= -(base_load),
+                    #    u_bat_hvac <= 0, u_bat_hvac >= -(u_hvac),
                        stored[0] == stored0,
                        stored[1:] >= batmin[1:],
                        stored[1:] <= batmax[1:],
@@ -498,9 +547,9 @@ class BuildingController:
     
     def MPC_Heat(self, RC, alpha):
         u_hvac = cp.Variable((self.nsteps_eff,1), name='u_hvac', bounds=[0,10])
-        # u_hvac_shift = cp.Variable((self.nsteps_eff,1), name='u_hvac_shift', bounds=[0,10])
+        u_hvac_shift = cp.Variable((self.nsteps_eff,1), name='u_hvac_shift', bounds=[0,10])
         u_bat = cp.Variable((self.nsteps_eff,1), name='u_bat')
-        u_bat_hvac = cp.Variable((self.nsteps_eff,1), name='u_bat_hvac')
+        # u_bat_hvac = cp.Variable((self.nsteps_eff,1), name='u_bat_hvac')
         u_load = cp.Variable((self.nsteps_eff,1), name='u_load')
         u_tot = cp.Variable((self.nsteps_eff,1), name='u_tot')
         y = cp.Variable((self.nsteps_eff,1), name='y')
@@ -509,7 +558,7 @@ class BuildingController:
         y0 = cp.Parameter((1), name='y0')
         yref = cp.Parameter((self.nsteps_eff,1), name='y_ref')
         d = cp.Parameter((self.nsteps_eff,1), name='d')
-        # hvac_prev = cp.Parameter((self.hvac_offset,1), name='hvac_prev')
+        hvac_prev = cp.Parameter((self.hvac_offset,1), name='hvac_prev')
         stored0 = cp.Parameter((1), name='stored0')
         batmin = cp.Parameter((self.nsteps_eff,1), name='bat_min')
         batmax = cp.Parameter((self.nsteps_eff,1), name='bat_max')
@@ -529,12 +578,14 @@ class BuildingController:
 
         constraints = [y[0] == y0,
                        y[1:] >= yref[1:],
-                    #    u_hvac_shift[:self.hvac_offset] == hvac_prev,
-                    #    u_hvac_shift[self.hvac_offset:] == u_hvac[:-self.hvac_offset],
-                       u_load == u_hvac + base_load,
-                       u_tot == u_hvac + u_bat + u_bat_hvac + base_load,
-                       u_bat <= self.inverterSize, u_bat >= -(base_load),
-                       u_bat_hvac <= 0, u_bat_hvac >= -(u_hvac),
+                       u_hvac_shift[:self.hvac_offset] == hvac_prev,
+                       u_hvac_shift[self.hvac_offset:] == u_hvac[:-self.hvac_offset],
+                       u_load == u_hvac_shift + base_load,
+                    #    u_tot == u_hvac + u_bat + u_bat_hvac + base_load,
+                       u_tot == u_hvac_shift + u_bat  + base_load,
+                       u_bat <= self.inverterSize, u_bat >= -(u_load),
+                    #    u_bat <= self.inverterSize, u_bat >= -(base_load),
+                    #    u_bat_hvac <= 0, u_bat_hvac >= -(u_hvac),
                        stored[0] == stored0,
                        stored[1:] >= batmin[1:],
                        stored[1:] <= batmax[1:],
@@ -544,6 +595,41 @@ class BuildingController:
                     ]
         for i in range(1, self.nsteps_eff):
             constraints.append(y[i] == (-1/(RC)*y[i-1] + 1/(RC)*d[i-1] + alpha*u_hvac[i-1])*self.step_mins + y[i-1])
+            constraints.append(stored[i] == stored[i-1] + u_bat[i-1] * self.step_mins / 60)
+
+        prob = cp.Problem(objective, constraints)
+
+        return prob
+    
+    def MPC_Bat(self):
+        u_bat = cp.Variable((self.nsteps_eff,1), name='u_bat')
+        u_tot = cp.Variable((self.nsteps_eff,1), name='u_tot')
+        stored = cp.Variable((self.nsteps_eff,1), name='stored')
+
+        u_load = cp.Parameter((self.nsteps_eff,1), name='u_load')
+        u_tot_old = cp.Parameter((self.nsteps_eff,1), name='u_tot_old')
+        stored0 = cp.Parameter((1), name='stored0')
+        batmin = cp.Parameter((self.nsteps_eff,1), name='bat_min')
+        batmax = cp.Parameter((self.nsteps_eff,1), name='bat_max')
+        power_ref = cp.Parameter((self.nsteps_eff,1), name='power_ref')
+        charge_incen = cp.Parameter((self.nsteps_eff,1), name='charge_incen')
+
+        objective = cp.Minimize(
+                        # +0.1*np.ones(self.nsteps_eff-1)@cp.power(cp.diff(u_bat),2)
+                        # +0.1*cp.norm(u_bat)
+                        # +8.0*charge_incen.T@u_bat
+                        +1.0*cp.norm(u_tot_old-u_tot)
+                        )
+
+        constraints = [
+                       u_tot == u_bat + u_load,
+                       u_bat <= self.inverterSize, u_bat >= -(u_load),
+                       stored[0] == stored0,
+                       stored[1:] >= batmin[1:],
+                       stored[1:] <= batmax[1:],
+                       u_tot <= power_ref,
+                    ]
+        for i in range(1, self.nsteps_eff):
             constraints.append(stored[i] == stored[i-1] + u_bat[i-1] * self.step_mins / 60)
 
         prob = cp.Problem(objective, constraints)

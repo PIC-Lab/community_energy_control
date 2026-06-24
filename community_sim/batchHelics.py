@@ -40,7 +40,7 @@ def Main():
     params["controlledLoads"] = ["hvac", "battery"]
     params["batCoveredLoads"] = ["base", "waterHeater", "hvac"]
     params["batDischargeMode"] = "loadFollow"
-    params["note"] = ""
+    params["notes"] = ""
 
     batchNum = 0
 

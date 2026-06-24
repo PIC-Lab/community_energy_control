@@ -41,10 +41,11 @@ class ConvexProblem(ABC):
         :param verbose: (bool) defaults to false
         '''
         try:
-            for key, value in paramValues.items():
-                self.prob.param_dict[key].value = value
+            # for key, value in paramValues.items():
+            for key in self.prob.param_dict.keys():
+                self.prob.param_dict[key].value = paramValues[key]
         except ValueError as e:
-            print(f'Parameter {key} recieved shape {value.shape} instead of {self.prob.param_dict[key].shape}')
+            print(f'Parameter {key} recieved shape {paramValues[key].shape} instead of {self.prob.param_dict[key].shape}')
             print(e)
 
         result = None

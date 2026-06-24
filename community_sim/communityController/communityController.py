@@ -165,7 +165,7 @@ class CommunityController:
             # coordinateSignals = np.where(self.coordinator.adjustValues['flexLoad'] == 0,
             #                             np.ones_like(self.predictedLoad)*20 ,
             #                             self.predictedLoad + self.coordinator.adjustValues['flexLoad'])
-            coordinateSignals = self.coordinator.adjustValues['buildBoundLoad']
+            coordinateSignals = self.coordinator.adjustValues['flexLoad']
             self.coordinateSignals_eff = np.repeat(coordinateSignals, self.stepSize_ratio, axis=1)
             self.stepCount = 0
 
@@ -180,8 +180,9 @@ class CommunityController:
             self.coordDebug[alias] = {}
             self.coordDebug[alias]['usagePenalty'] = self.coordinator.usagePenalty[i]
             self.coordDebug[alias]['flexLoad'] = self.coordinator.adjustValues['flexLoad'][i,:]
-            self.coordDebug[alias]['flexBoundLoad'] = self.coordinator.adjustValues['flexBoundLoad'][i,:]
+            self.coordDebug[alias]['flexBoundLoad'] = self.coordinator.boundValues['flexBoundLoad'][i,:]
             self.coordDebug[alias]['flexPredLoad'] = self.coordinator.adjustValues['flexPredLoad'][i,:]
+            # self.coordDebug[alias]['queue'] = self.coordinator.adjustValues['queue'][i,:]
             self.coordDebug[alias]['predLoad'] = self.coordinator.predictedLoad[i,:]
             self.coordDebug[alias]['lowerBound'] = self.coordinator.predictedFlex[i,:,0]
             self.coordDebug[alias]['upperBound'] = self.coordinator.predictedFlex[i,:,1]
@@ -205,7 +206,7 @@ class CommunityController:
         for i in range(len(self.coordinator.transInfo.keys())):
             self.coordDebug['gen'][f"trans{i+1} lim"] = self.coordinator.transLim[i:i+1]
             # totalLoad = self.coordinator.adjustValues['flexLoad'] + self.coordinator.predictedLoad
-            self.coordDebug['gen'][f"trans{i+1} bound load"] = self.coordinator.adjustValues['transBoundLoad'][i,:]
+            self.coordDebug['gen'][f"trans{i+1} bound load"] = self.coordinator.boundValues['transBoundLoad'][i,:]
             self.coordDebug['gen'][f"trans{i+1} pred load"] = self.coordinator.adjustValues['transPredLoad'][i,:]
             self.coordDebug['gen'][f"trans{i+1} base load"] = self.coordinator.baseLoad[i,:]
         self.coordDebug['gen']['coord feas'] = [self.coordinator.adjustProb.feasible]
